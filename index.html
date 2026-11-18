@@ -1886,7 +1886,84 @@ function simDefaults(){
   for(let k=1;k<=6;k++){const d=new Date(nowY,nowM-k,1);const x=dreCalc(d.getFullYear(),d.getMonth(),d.getMonth(),'caixa');fixo+=x.R.desp.tot+x.R.pl.tot+x.R.fin.tot;varr+=x.R.imp.tot+x.R.custo.tot;rbT+=x.rb;n++}
   return{clientes:ativos.length,novos:2,honorario:ativos.length?Math.round(cart/ativos.length):150,meses:24,churn:2,reajuste:8,fixo:Math.round(fixo/n),varPct:rbT?Math.round(varr/rbT*1000)/10:10,invest:0,sazonais:true};
 }
+/* ---- simulador: modos anuais (crescimento do faturamento e comparação de cenários) ---- */
+const SIM_MODOS=[['cli','Carteira mês a mês'],['anual','Crescimento anual do faturamento'],['cen','Comparar cenários']];
+const LIM_SIMPLES=4800000;
+const brlK=v=>Math.abs(v)>=1e6?'R$ '+(v/1e6).toFixed(2).replace('.',',')+' mi':Math.abs(v)>=1e5?'R$ '+Math.round(v).toLocaleString('pt-BR'):brl(v);
+function simAnualDefaults(){
+  const b=simDefaults();let rb=0;
+  for(let k=1;k<=12;k++){const d=new Date(nowY,nowM-k,1);rb+=dreCalc(d.getFullYear(),d.getMonth(),d.getMonth(),'caixa').rb}
+  return{fatAno:Math.round(rb)||Math.round(b.clientes*b.honorario*12),cresc:5,anos:10,fixoAno:Math.round(b.fixo*12),reajCusto:4,varPct:b.varPct,invest:0,meta:0,cenP:2,cenB:5,cenO:10};
+}
+function projAnual(P,g){
+  const rows=[];let acum=-(+P.invest||0),payback=null;
+  for(let i=1;i<=Math.max(1,Math.min(30,+P.anos||10));i++){
+    const fat=(+P.fatAno||0)*Math.pow(1+g/100,i),fixo=(+P.fixoAno||0)*Math.pow(1+(+P.reajCusto||0)/100,i),vari=fat*(+P.varPct||0)/100;
+    const custo=fixo+vari,luc=fat-custo;acum+=luc;if(payback==null&&(+P.invest||0)>0&&acum>=0)payback=i;
+    rows.push({i,ano:nowY+i,fat,fixo,vari,custo,luc,marg:fat?luc/fat:0,acum,mes:fat/12});
+  }
+  return{rows,payback};
+}
+function simModoBar(m){return `<div class="seg" role="group" aria-label="Tipo de simulação" style="margin:0 0 14px;flex-wrap:wrap">${SIM_MODOS.map(([k,n])=>`<button data-act="simModo" data-v="${k}" aria-pressed="${m===k}">${n}</button>`).join('')}</div>`}
+function simTopo(m,sub){return ph('Simulador de crescimento',sub,`<button class="btn" data-act="simReset">Voltar aos valores atuais</button>`+(m==='cli'?`<button class="btn primary" data-act="simOrc">${ic('orc')}Levar honorários ao orçamento de ${S.ano}</button>`:''))+simModoBar(m)}
+function simParamsAnuais(P,inp,cen){
+  return `<div class="cols eq">
+    <div class="panel"><h3>Faturamento</h3><div class="params">
+      ${inp('fatAno','Faturamento dos últimos 12 meses (R$)')}
+      ${cen?inp('cenP','Pessimista: crescimento ao ano (%)','0.1')+inp('cenB','Base: crescimento ao ano (%)','0.1')+inp('cenO','Otimista: crescimento ao ano (%)','0.1'):inp('cresc','Crescimento ao ano (%)','0.1')+inp('meta','Meta de faturamento anual (R$, opcional)')}
+      ${inp('anos','Anos de projeção (até 30)')}
+    </div></div>
+    <div class="panel"><h3>Custos</h3><div class="params">
+      ${inp('fixoAno','Custo fixo anual hoje (R$)')}${inp('reajCusto','Reajuste anual do custo fixo (%)','0.1')}
+      ${inp('varPct','Custo variável (% do faturamento)','0.1')}${inp('invest','Investimento inicial (R$)')}
+    </div><p class="hint" style="margin-top:10px">Valores iniciais: faturamento recebido nos últimos 12 meses e custos médios dos últimos 6 meses. O custo fixo sobe pelo reajuste informado (ex.: inflação); o variável acompanha o faturamento.</p></div>
+  </div>`;
+}
+function vSimAnual(P,inp){
+  const g=+P.cresc||0,{rows,payback}=projAnual(P,g),last=rows[rows.length-1],N=rows.length;
+  const totLuc=rows.reduce((a,r)=>a+r.luc,0),mult=(+P.fatAno||0)?last.fat/(+P.fatAno):0;
+  const meta=+P.meta||0,anoMeta=meta?rows.find(r=>r.fat>=meta):null,gNec=meta&&(+P.fatAno||0)>0?(Math.pow(meta/(+P.fatAno),1/N)-1)*100:null;
+  const simp=rows.find(r=>r.fat>LIM_SIMPLES),neg=rows.find(r=>r.luc<0);
+  const avisos=[];
+  if(meta)avisos.push(anoMeta?`A meta de <b>${brl(meta)}</b> por ano é atingida em <b>${anoMeta.ano}</b> (ano ${anoMeta.i}). Para chegar nela em ${N} anos, basta crescer <b>${pct(gNec/100)}</b> ao ano.`:`A meta de <b>${brl(meta)}</b> por ano não é atingida em ${N} anos com ${pct(g/100)} ao ano. Seria preciso crescer <b>${pct(gNec/100)}</b> ao ano.`);
+  if(simp)avisos.push(`Em <b>${simp.ano}</b> o faturamento passa de ${brl(LIM_SIMPLES)}, o limite do Simples Nacional. Vale planejar a mudança de regime antes disso.`);
+  if(neg)avisos.push(`Em <b>${neg.ano}</b> o resultado fica negativo: os custos crescem mais rápido que o faturamento.`);
+  return simTopo('anual',`Projete ${N} anos de faturamento crescendo ${pct(g/100)} ao ano`)+simParamsAnuais(P,inp,false)+`
+  <section class="kpis">
+    ${stat(`Faturamento em ${last.ano}`,brlK(last.fat),`${mult?mult.toFixed(2).replace('.',',')+'× o de hoje':''} · ${brl(last.mes)} por mês`,'dollar','a')}
+    ${stat(`Lucro em ${last.ano}`,brlK(last.luc),`margem de ${pct(last.marg)}`,'wallet','p',last.luc<0?'neg':'')}
+    ${stat('Lucro acumulado',brlK(totLuc),`em ${N} anos${(+P.invest||0)>0?`, descontado o investimento: ${brl(last.acum)}`:''}`,'percent','i',totLuc<0?'neg':'')}
+    ${stat('Faturamento acumulado',brlK(rows.reduce((a,r)=>a+r.fat,0)),`soma de ${N} anos`,'clientes','a')}
+    ${stat('Payback',(+P.invest||0)>0?(payback?`${payback} ${payback===1?'ano':'anos'}`:'não se paga'):'—',(+P.invest||0)>0?`investimento de ${brl(+P.invest)}`:'sem investimento inicial','target','w')}
+  </section>
+  ${avisos.length?`<div class="panel"><h3>Pontos de atenção</h3><ul style="margin:0;padding-left:18px;line-height:1.7">${avisos.map(a=>`<li>${a}</li>`).join('')}</ul></div>`:''}
+  <div class="panel"><h3>Faturamento, custos e lucro por ano</h3>${chart({labels:rows.map(r=>String(r.ano)),series:[{name:'Faturamento',color:C.rec,values:rows.map(r=>r.fat)},{name:'Custos',color:C.des,values:rows.map(r=>r.custo)},{name:'Lucro',type:'line',color:C.pri,values:rows.map(r=>r.luc)}]})}</div>
+  <h2 class="sec">Projeção ano a ano</h2>
+  <div class="tscroll"><table><thead><tr><th>Ano</th><th>Faturamento</th><th>Por mês</th><th>Custo fixo</th><th>Custo variável</th><th>Lucro</th><th>Margem</th><th>Acumulado</th></tr></thead><tbody>
+  <tr class="muted"><td>Hoje (12 meses)</td><td>${num(+P.fatAno||0)}</td><td>${num((+P.fatAno||0)/12)}</td><td>${num(+P.fixoAno||0)}</td><td>${num((+P.fatAno||0)*(+P.varPct||0)/100)}</td><td>—</td><td>—</td><td>${(+P.invest||0)?num(-(+P.invest)):'—'}</td></tr>
+  ${rows.map(r=>`<tr${r.fat>LIM_SIMPLES?' title="Acima do limite do Simples Nacional"':''}><td>${r.ano}${r.fat>LIM_SIMPLES?' <span class="muted">(acima do Simples)</span>':''}</td><td style="font-weight:600">${num(r.fat)}</td><td>${num(r.mes)}</td><td class="vd">${num(r.fixo)}</td><td class="vd">${num(r.vari)}</td><td class="${r.luc<0?'neg':'pos'}">${num(r.luc)}</td><td>${pct(r.marg)}</td><td class="${r.acum<0?'neg':''}">${num(r.acum)}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function vSimCen(P,inp){
+  const cs=[['Pessimista',+P.cenP||0,C.des],['Base',+P.cenB||0,C.pri],['Otimista',+P.cenO||0,C.rec]].map(([n,g,cor])=>({n,g,cor,...projAnual(P,g)}));
+  const N=cs[0].rows.length,anos=cs[0].rows.map(r=>String(r.ano)),fin=cs.map(c=>c.rows[N-1]);
+  return simTopo('cen',`Três ritmos de crescimento lado a lado, em ${N} anos`)+simParamsAnuais(P,inp,true)+`
+  <section class="kpis">
+    ${cs.map((c,k)=>stat(`${c.n} (${pct(c.g/100)} ao ano)`,brlK(fin[k].fat),`faturamento em ${fin[k].ano} · lucro acumulado ${brl(c.rows.reduce((a,r)=>a+r.luc,0))}`,'dollar',['w','p','a'][k],fin[k].luc<0?'neg':'')).join('')}
+  </section>
+  <div class="cols eq">
+    <div class="panel"><h3>Faturamento anual</h3>${chart({labels:anos,series:cs.map(c=>({name:c.n,type:'line',color:c.cor,values:c.rows.map(r=>r.fat)}))})}</div>
+    <div class="panel"><h3>Lucro anual</h3>${chart({labels:anos,series:cs.map(c=>({name:c.n,type:'line',color:c.cor,values:c.rows.map(r=>r.luc)}))})}</div>
+  </div>
+  <h2 class="sec">Comparação ano a ano</h2>
+  <div class="tscroll"><table><thead><tr><th>Ano</th>${cs.map(c=>`<th>Faturamento ${c.n.toLowerCase()}</th>`).join('')}${cs.map(c=>`<th>Lucro ${c.n.toLowerCase()}</th>`).join('')}</tr></thead><tbody>
+  ${cs[0].rows.map((r,i)=>`<tr><td>${r.ano}</td>${cs.map(c=>`<td${c.rows[i].fat>LIM_SIMPLES?' title="Acima do limite do Simples Nacional" style="font-weight:600;color:var(--warning)"':''}>${num(c.rows[i].fat)}</td>`).join('')}${cs.map(c=>`<td class="${c.rows[i].luc<0?'neg':'pos'}">${num(c.rows[i].luc)}</td>`).join('')}</tr>`).join('')}
+  </tbody></table></div>
+  <p class="hint">Em laranja, os anos em que o faturamento passa do limite do Simples Nacional (${brl(LIM_SIMPLES)}).</p>`;
+}
 function vSim(){
+  const modo=(cfg().sim||{}).modo||'cli';
+  if(modo!=='cli'){const P={...simAnualDefaults(),...(cfg().sim||{})};const inp=(k,l,step='1')=>`<label>${l}<input type="number" step="${step}" data-sim="${k}" value="${P[k]}"></label>`;return modo==='cen'?vSimCen(P,inp):vSimAnual(P,inp)}
   const P={...simDefaults(),...(cfg().sim||{})};
   // curva sazonal: projeção dos serviços do ano atual (ou próximo, se existir)
   const sazY=svcDoc(nowY+1)?nowY+1:nowY;const saz=Z();svcList(sazY).forEach(s=>{const p=projSvc(sazY,s);for(let i=0;i<12;i++)saz[i]+=p.total[i]});
@@ -1902,7 +1979,7 @@ function vSim(){
   }
   const last=rows[rows.length-1],margem=rows.reduce((a,r)=>a+r.luc,0)/Math.max(1,rows.reduce((a,r)=>a+r.rec,0));
   const inp=(k,l,step='1')=>`<label>${l}<input type="number" step="${step}" data-sim="${k}" value="${P[k]}"></label>`;
-  return ph('Simulador de crescimento','Projete a carteira, a receita e o lucro nos próximos meses',`<button class="btn" data-act="simReset">Voltar aos valores atuais</button><button class="btn primary" data-act="simOrc">${ic('orc')}Levar honorários ao orçamento de ${S.ano}</button>`)+`
+  return simTopo('cli','Projete a carteira, a receita e o lucro nos próximos meses')+`
   <div class="cols eq">
     <div class="panel"><h3>Crescimento</h3><div class="params">
       ${inp('clientes','Clientes atuais')}${inp('novos','Novos clientes por mês')}${inp('honorario','Honorário médio (R$)')}
@@ -1945,7 +2022,8 @@ main.addEventListener('click',e=>{
     case 'svcOrcAll':{if(confirm(`Levar a projeção de todos os serviços para o orçamento de ${ano}? As linhas desses serviços serão substituídas.`)){svcList(ano).forEach(s=>levarOrcamento(ano,s,true));render();toast('Orçamento atualizado com a projeção dos serviços')}break}
     case 'dreP':S.dreP=b.dataset.v;render();break;
     case 'print':window.print();break;
-    case 'simReset':setCfg({sim:{}});render();break;
+    case 'simReset':setCfg({sim:{modo:(cfg().sim||{}).modo||'cli'}});render();break;
+    case 'simModo':setCfg({sim:{...(cfg().sim||{}),modo:b.dataset.v}});render();break;
   }
 });
 main.addEventListener('change',e=>{
