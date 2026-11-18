@@ -2088,7 +2088,7 @@ function vCfg(){
       <p class="hint">O Minhas Finanças não é mais usado no dia a dia: os lançamentos são feitos aqui. A importação fica só para recuperar histórico antigo, e nunca sobrescreve o que foi alterado ou excluído aqui.</p>
       <p style="margin:0 0 8px"><button class="btn small" data-act="goImport">${ic('upload')}Importar histórico antigo</button></p>
       <p style="margin:0 0 12px">${allMovs().filter(m=>m.editado).length} lançamento(s) alterados aqui, ${(c.mfIgn||[]).length} excluído(s) aqui.</p>
-      ${(c.mfIgn||[]).length?'<button class="btn small" data-act="limparIgn">Permitir que os excluídos voltem na próxima importação</button>':''}</div>
+      ${(c.mfIgn||[]).length?'<button class="btn small" data-act="limparIgn" style="white-space:normal;height:auto;min-height:32px;padding:6px 12px;text-align:left">Permitir que os excluídos voltem na próxima importação</button>':''}</div>
   </div>
   <div class="cols eq">
     <div class="panel"><h3>Feriados municipais</h3>
@@ -5357,10 +5357,14 @@ restaurarBackup=async function(files){
   aplicarDados(b.dados);toast('Backup restaurado');
 };
 /* backup baixado: tudo o que existe, inclusive obrigações, tarefas, usuários e a parte financeira */
-baixarBackup=async function(){
+function montarBackupJSON(){
   const dados={};for(const [col,t] of Object.entries(COLS))dados[col]=JSON.parse(JSON.stringify(S[t]||{}));
   if(UNIF&&!EQUIPE&&dados.cadastros&&dados.cadastros.clientes)dados.cadastros.clientes=pubClientes(S.cad.clientes);
-  const ok=await baixar(`JM-Gestao-backup-${carimbo()}.json`,JSON.stringify({sistema:'JM Gestão',versao:2,geradoEm:new Date().toISOString(),resumo:{movimentacoes:allMovs().length,clientes:clientes().length,tarefas:tarefas().length},dados}));
+  return JSON.stringify({sistema:'JM Gestão',versao:2,geradoEm:new Date().toISOString(),resumo:{movimentacoes:allMovs().length,clientes:clientes().length,tarefas:tarefas().length},dados});
+}
+window.jmBackupJSON=()=>finOk()?montarBackupJSON():null;
+baixarBackup=async function(){
+  const ok=await baixar(`JM-Gestao-backup-${carimbo()}.json`,montarBackupJSON());
   if(ok){setCfg({ultimoBackup:todayISO});render();toast('Backup completo gerado')}
 };
 /* painel de cópias em Backup e configurações */
@@ -5378,6 +5382,7 @@ if(UNIF&&!EQUIPE){
   main.addEventListener('click',async e=>{const b=e.target.closest('[data-act="copiaAgora"],[data-act="copiaRest"],[data-act="driveAgora"]');if(!b)return;e.preventDefault();
     if(b.dataset.act==='copiaAgora'){b.disabled=true;toast('Fazendo a cópia…');try{await snapshotDB('manual-'+new Date().toISOString().slice(0,16).replace(/[:T]/g,'-'));toast('Cópia feita')}catch(er){toast('Não foi possível fazer a cópia ('+(er.code||er.message)+')')}carregarCopias();return}
     if(b.dataset.act==='copiaRest'){const id=b.dataset.id;if(!confirm('Restaurar esta cópia? Os dados atuais serão substituídos; antes disso o sistema guarda uma cópia do estado atual.'))return;toast('Restaurando…');try{await restaurarCopia(id)}catch(er){toast('Falha ao restaurar ('+(er.code||er.message)+')')}carregarCopias();return}
+    if(b.dataset.act==='driveAgora'&&window.JM_DRIVE_BACKUP){window.JM_DRIVE_BACKUP();return}
     if(b.dataset.act==='driveAgora'){let mcp=null;try{mcp=window.claude&&window.claude.use?await window.claude.use('mcp'):null}catch(er){}
       if(!mcp){toast('Não deu para acionar daqui. Abra o JM Gestão pelo claude.ai.');return}
       try{await mcp.callTool('Claude Code Remote','fire_trigger',{trigger_id:BK_TRIG});toast('Backup no Drive iniciado. Em alguns minutos os arquivos aparecem na pasta "JM Gestão – Backups".')}catch(er){toast('Não foi possível iniciar o backup no Drive ('+((er&&er.code)||'erro')+')')}}
@@ -5583,11 +5588,85 @@ async function iniciar(u){
   window.claude={use:async n=>n==='db'?db:n==='user'?user:n==='downloads'?downloads:null};
   fechaTela();
   const s=document.createElement('script');s.textContent=document.getElementById('jmloader').textContent;document.body.appendChild(s);
+  if(dono)prepararDrive();
   /* o avatar do topo mostra quem entrou e permite sair */
   let n=0;const t=setInterval(()=>{const av=document.querySelector('.avatar');if(av||++n>60){clearInterval(t)}if(!av)return;
     av.title='Conectado como '+email+' — clique para sair';av.style.cursor='pointer';
     av.addEventListener('click',()=>{if(confirm('Sair do JM Gestão ('+email+')?'))window.JM_SAIR()})},500);
 }
+/* ---------- backup no Google Drive do dono (sem chave guardada: autoriza na hora, pela conta Google) ---------- */
+const DRIVE_SCOPE='https://www.googleapis.com/auth/drive.file',PASTA='JM Gestão – Backups do sistema',GUARDA=60;
+let tok=null,tokAte=0;
+try{const t=JSON.parse(sessionStorage.getItem('jm-dt')||'null');if(t&&t.ate>Date.now()){tok=t.tok;tokAte=t.ate}}catch(e){}
+function aviso(html,botoes){
+  let b=document.getElementById('jmdrive');if(!b){b=document.createElement('div');b.id='jmdrive';
+    b.style.cssText='position:fixed;right:16px;bottom:16px;left:auto;max-width:min(420px,calc(100vw - 32px));z-index:9999;background:#1e293b;color:#fff;border-radius:12px;padding:12px 14px;font:14px/1.45 Inter,system-ui,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.25);display:flex;gap:10px;align-items:center;flex-wrap:wrap';document.body.appendChild(b)}
+  b.innerHTML='<span style="flex:1;min-width:200px">'+html+'</span>';
+  for(const [txt,fn,prim] of (botoes||[['Fechar',()=>b.remove()]])){const x=document.createElement('button');x.type='button';x.textContent=txt;
+    x.style.cssText='border:0;border-radius:8px;padding:6px 12px;font-weight:600;cursor:pointer;'+(prim?'background:#22c55e;color:#06210f':'background:transparent;color:#cbd5e1;border:1px solid #475569');x.onclick=fn;b.appendChild(x)}
+  return b}
+const fechaAviso=()=>{const b=document.getElementById('jmdrive');if(b)b.remove()};
+async function pedirToken(){
+  const p=new GoogleAuthProvider();p.addScope(DRIVE_SCOPE);p.setCustomParameters({login_hint:DONO});
+  const {reauthenticateWithPopup}=await import('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js');
+  const r=await reauthenticateWithPopup(auth.currentUser,p);
+  const c=GoogleAuthProvider.credentialFromResult(r);if(!c||!c.accessToken)throw new Error('o Google não liberou o acesso ao Drive');
+  tok=c.accessToken;tokAte=Date.now()+50*60*1000;try{sessionStorage.setItem('jm-dt',JSON.stringify({tok,ate:tokAte}))}catch(e){}
+}
+async function gd(url,opt={}){
+  const r=await fetch(url,{...opt,headers:{Authorization:'Bearer '+tok,...(opt.headers||{})}});
+  if(r.status===401||r.status===403&&/insufficient|scope/i.test(await r.clone().text())){tok=null;try{sessionStorage.removeItem('jm-dt')}catch(e){}throw Object.assign(new Error('autorização vencida'),{code:'token'})}
+  if(!r.ok)throw new Error('Drive '+r.status+': '+(await r.text()).slice(0,160));
+  return r.status===204?{}:r.json()}
+async function pastaId(){
+  const q=encodeURIComponent(`name='${PASTA}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const l=await gd(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&spaces=drive`);
+  if(l.files&&l.files.length)return l.files[0].id;
+  const c=await gd('https://www.googleapis.com/drive/v3/files?fields=id',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:PASTA,mimeType:'application/vnd.google-apps.folder'})});
+  return c.id}
+async function enviarDrive(json){
+  const pid=await pastaId();const agora=new Date(),p2=n=>String(n).padStart(2,'0');
+  const nome=`JM-Gestao-backup-${agora.getFullYear()}-${p2(agora.getMonth()+1)}-${p2(agora.getDate())}_${p2(agora.getHours())}h${p2(agora.getMinutes())}.json`;
+  const bd='jmb'+Date.now();
+  const body=`--${bd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({name:nome,parents:[pid],mimeType:'application/json'})}\r\n--${bd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${json}\r\n--${bd}--`;
+  const f=await gd('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,size',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+bd},body});
+  /* mantém os 60 mais recentes; os mais antigos vão para a lixeira do Drive (recuperáveis) */
+  try{const q=encodeURIComponent(`'${pid}' in parents and trashed=false`);
+    const l=await gd(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=createdTime desc&pageSize=200&fields=files(id,name)`);
+    for(const x of (l.files||[]).slice(GUARDA))await gd(`https://www.googleapis.com/drive/v3/files/${x.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({trashed:true})})}catch(e){}
+  try{await setDoc(doc(fs,'sistema/drive'),{j:JSON.stringify({em:agora.toISOString(),arquivo:nome}),em:serverTimestamp()})}catch(e){}
+  return nome}
+let enviando=false;
+window.JM_DRIVE_BACKUP=async function(){
+  if(enviando)return;
+  const json=window.jmBackupJSON&&window.jmBackupJSON();
+  if(!json){aviso('Os dados ainda estão carregando. Tente de novo em alguns segundos.');return}
+  enviando=true;
+  try{
+    if(!tok||Date.now()>tokAte){aviso('Autorize o acesso ao seu Google Drive na janela que abriu…',[]);await pedirToken()}
+    aviso('Enviando o backup para o Google Drive…',[]);
+    const nome=await enviarDrive(json);
+    aviso(`Backup salvo no Google Drive, na pasta “${esc(PASTA)}”: ${esc(nome)}`);setTimeout(fechaAviso,8000);
+  }catch(e){
+    const c=e&&e.code||'';
+    if(c==='token')aviso('A autorização do Drive venceu. Clique para autorizar de novo.',[['Autorizar e enviar',()=>window.JM_DRIVE_BACKUP(),true],['Depois',fechaAviso]]);
+    else if(/popup-closed|cancelled-popup/.test(c))aviso('O backup no Drive não foi feito porque a janela foi fechada.',[['Tentar de novo',()=>window.JM_DRIVE_BACKUP(),true],['Depois',fechaAviso]]);
+    else if(/popup-blocked/.test(c))aviso('O navegador bloqueou a janela de autorização. Clique no botão abaixo.',[['Autorizar e enviar',()=>window.JM_DRIVE_BACKUP(),true],['Depois',fechaAviso]]);
+    else aviso('Não foi possível salvar o backup no Drive ('+esc(c||e.message)+').',[['Tentar de novo',()=>window.JM_DRIVE_BACKUP(),true],['Fechar',fechaAviso]]);
+  }finally{enviando=false}
+};
+function prepararDrive(){
+  /* uma vez por dia: se o backup do dia no Drive ainda não foi feito, oferece fazer com um clique */
+  setTimeout(async()=>{
+    let ult=null;try{const s=await getDoc(doc(fs,'sistema/drive'));if(s.exists())ult=JSON.parse(s.data().j).em}catch(e){}
+    if(ult&&Date.now()-new Date(ult).getTime()<20*3600*1000)return;
+    let n=0;while(!(window.jmBackupJSON&&window.jmBackupJSON())&&n++<30)await new Promise(r=>setTimeout(r,2000));
+    if(!(window.jmBackupJSON&&window.jmBackupJSON()))return;
+    if(tok&&Date.now()<tokAte){window.JM_DRIVE_BACKUP();return}
+    aviso('O backup de hoje no seu Google Drive ainda não foi feito.',[['Fazer agora',()=>window.JM_DRIVE_BACKUP(),true],['Depois',fechaAviso]]);
+  },6000);
+}
+
 onAuthStateChanged(auth,u=>{if(u)iniciar(u);else if(!iniciado)telaLogin()});
 </script>
 </body>
