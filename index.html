@@ -722,7 +722,7 @@ function vMov(){
   const t=(tp,pg)=>ms.filter(m=>m.tipo===tp&&(pg?m.status==='Pago':m.status!=='Pago')).reduce((a,m)=>a+(+m.valor||0),0);
   const grupos=[...new Set([...gruposMov('Receita'),...gruposMov('Despesa')])].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const imp=vImports();
-  return ph('Movimentações','Receitas e despesas lançadas, pagas e pendentes',`<button class="btn" data-act="gerarHon">${ic('svc')}Gerar honorários</button><button class="btn" data-act="expMov">${ic('download')}Exportar Excel</button><button class="btn" data-act="ofxImport">${ic('upload')}Importar extrato (OFX)</button><button class="btn primary" data-act="novaMov">${ic('plus')}Nova movimentação</button>`)+`
+  return ph('Movimentações','Receitas e despesas lançadas, pagas e pendentes',`<button class="btn" data-act="gerarHon">${ic('svc')}Gerar honorários</button><button class="btn" data-act="expMov">${ic('download')}Exportar Excel</button><button class="btn" data-act="prazos">${ic('hist')}Prazos</button><button class="btn" data-act="ofxImport">${ic('upload')}Importar extrato (OFX)</button><button class="btn primary" data-act="novaMov">${ic('plus')}Nova movimentação</button>`)+`
   <div class="bar-tools">
     ${S.mStatus==='vencidos'?`<strong>Todos os vencidos até hoje</strong>`:`<span class="monthnav"><button data-act="mPrev" aria-label="Mês anterior">‹</button><button type="button" class="mpick" data-mpick="mym" data-ym="${S.mym}" aria-haspopup="dialog" aria-expanded="false" title="Escolher mês">${MESES_L[mo-1]} ${y}</button><button data-act="mNext" aria-label="Próximo mês">›</button></span>`}
     <select data-act="mTipo" aria-label="Tipo"><option value="todos">Receitas e despesas</option><option value="Receita"${S.mTipo==='Receita'?' selected':''}>Receitas</option><option value="Despesa"${S.mTipo==='Despesa'?' selected':''}>Despesas</option></select>
@@ -852,7 +852,7 @@ function openMov(id,dup,pre){
       </div>
       ${dup?'<p class="hint" style="margin-top:12px">Cópia de um lançamento: altere o que precisar (data, valor, descrição, situação) e salve. O original não muda.</p>':''}
     </div>
-    <div class="dfoot"><span style="display:flex;gap:8px;flex-wrap:wrap">${novo?'':`<button class="btn" data-dup>Duplicar</button>`}${!novo&&m0.status!=='Pago'?`<button class="btn" data-parc>${m0.tipo==='Receita'?'Recebimento':'Pagamento'} parcial</button>`:''}</span><span style="display:flex;gap:8px"><button class="btn" data-close>Cancelar</button><button class="btn primary" data-save>Salvar</button></span></div>`;
+    <div class="dfoot"><span style="display:flex;gap:8px;flex-wrap:wrap">${novo?'':`<button class="btn" data-dup>Duplicar</button>`}${!novo&&grupoDoMov(m0)?'<button class="btn" data-pror>Prorrogar</button>':''}${!novo&&m0.status!=='Pago'?`<button class="btn" data-parc>${m0.tipo==='Receita'?'Recebimento':'Pagamento'} parcial</button>`:''}</span><span style="display:flex;gap:8px"><button class="btn" data-close>Cancelar</button><button class="btn primary" data-save>Salvar</button></span></div>`;
   };
   draw();
   dlg.oninput=dlg.onchange=e=>{const r=e.target.dataset.r;if(r){if(r==='n')R.n=Math.max(2,Math.min(120,parseInt(e.target.value)||2));else R[r]=e.target.value;if(r==='n'){const h=dlg.querySelector('[data-rres]');if(h)h.textContent=repResumo(R,D);return}if(e.type==='change'){draw();const f=dlg.querySelector(`[data-r="${r}"]`);if(f)f.focus()}return}
@@ -862,6 +862,7 @@ function openMov(id,dup,pre){
     if(e.target===dlg||e.target.closest('[data-close]')){dlg.close();return}
     const tp=e.target.closest('[data-tipo]');if(tp){D.tipo=tp.dataset.tipo;if(D.tipo==='Despesa')delete D.cliente_id;draw();return}
     if(e.target.closest('[data-dup]')){dlg.close();openMov(id,true);return}
+    if(e.target.closest('[data-pror]')){const G=grupoDoMov(m0);if(G)openProrrogar(G.grp);return}
     if(e.target.closest('[data-parc]')){dlg.close();openParcial(id);return}
     if(e.target.closest('[data-escv]')){draw();return}
     const escB=e.target.closest('[data-esc]');
@@ -2184,6 +2185,7 @@ function vCfg(){
 main.addEventListener('click',async e=>{
   const b=e.target.closest('[data-act]');if(!b||b.tagName==='SELECT'||b.tagName==='INPUT')return;
   switch(b.dataset.act){
+    case 'prazos':openPrazos();break;
     case 'expMov':{const ms=movFiltradas();if(!ms.length){toast('Nada para exportar com esses filtros');break}if(await baixar(`Movimentacoes-${S.mStatus==='vencidos'?'vencidos':S.mym}-${carimbo()}.xlsx`,xlsxBlob([['Movimentações',linhasMov(ms)]])))toast('Planilha gerada');break}
     case 'expDre':{if(await baixar(`DRE-${S._dreExport.lbl.replace(/\s+/g,'-')}.xlsx`,xlsxBlob([['DRE',linhasDre()]])))toast('Planilha gerada');break}
     case 'expAll':exportarTudo();break;
@@ -4195,6 +4197,103 @@ function estenderFixas(){
     fx[g]={...f,ate:ym};mud=1;
   }
   if(mud){S._acao='Despesas e receitas fixas: novos meses';setCfg({fixas:fx});if(n)render()}
+}
+
+
+/* ================= PRORROGAR repetições com prazo (mensal por alguns meses, parcelada, fixa encerrada) ================= */
+const ymLab=ym=>{const [y,m]=ym.split('-');return MESES[+m-1]+'/'+y};
+function repGrupos(){
+  const G=new Map();for(const m of allMovs()){if(!m.rep||!m.rep.grp)continue;if(!G.has(m.rep.grp))G.set(m.rep.grp,[]);G.get(m.rep.grp).push(m)}
+  const fx=cfg().fixas||{},out=[];
+  for(const [g,ms] of G){
+    ms.sort((a,b)=>a.data.localeCompare(b.data));const t=ms[ms.length-1],tipo=t.rep.tipo;
+    if(tipo==='fixa'&&!(fx[g]&&fx[g].fim))continue; // fixa ativa não tem prazo
+    const cont={};ms.forEach(x=>{cont[x.valor]=(cont[x.valor]||0)+1});const valor=+Object.entries(cont).sort((a,b)=>b[1]-a[1])[0][0];
+    out.push({grp:g,tipo,ms,ult:t,fim:t.data.slice(0,7),n:Math.max(t.rep.n||0,...ms.map(x=>x.rep.i||0)),pend:ms.filter(x=>x.status!=='Pago').length,
+      raiz:String(t.descricao).replace(/\s*\(\d+\/\d+\)$/,''),mov:t.tipo,valor,dia:+ms[0].data.slice(8,10)});
+  }
+  /* séries sem marcação de repetição (vindas da importação): mesma descrição, grupo e tipo, mês a mês */
+  const SR=new Map(),fixaKey=new Set();
+  for(const m of allMovs()){const k=serieKey(m);if(m.rep&&m.rep.tipo==='fixa'&&!(fx[m.rep.grp]&&fx[m.rep.grp].fim))fixaKey.add(k);if(m.rep)continue;if(!SR.has(k))SR.set(k,[]);SR.get(k).push(m)}
+  const desde=addMonths(curYM+'-01',-2).slice(0,7);
+  for(const [k,ms] of SR){
+    if(fixaKey.has(k))continue;ms.sort((a,b)=>a.data.localeCompare(b.data));const t=ms[ms.length-1];
+    if(new Set(ms.map(x=>x.data.slice(0,7))).size<3||t.data.slice(0,7)<desde)continue;
+    const ult3=ms.slice(-3),cont={};ult3.forEach(x=>{cont[x.valor]=(cont[x.valor]||0)+1});const valor=+Object.entries(cont).sort((a,b)=>b[1]-a[1])[0][0];
+    out.push({grp:'s:'+k,tipo:'serie',ms,ult:t,fim:t.data.slice(0,7),n:ms.length,pend:ms.filter(x=>x.status!=='Pago').length,raiz:t.descricao,mov:t.tipo,valor,dia:+t.data.slice(8,10)});
+  }
+  return out.sort((a,b)=>a.fim.localeCompare(b.fim)||a.raiz.localeCompare(b.raiz,'pt-BR'));
+}
+const serieKey=m=>m.tipo+'|'+norm(m.descricao||'')+'|'+(m.grupo||'');
+const repGrupo=g=>repGrupos().find(x=>x.grp===g)||null;
+const grupoDoMov=m=>m.rep&&m.rep.grp?repGrupo(m.rep.grp):repGrupo('s:'+serieKey(m));
+function prorrogarGrupo(g,qtd,valor,virarFixa){
+  const G=repGrupo(g);if(!G)return 0;const t=G.ult,fx={...(cfg().fixas||{})};
+  const novaData=k=>{const ym=addMonths(t.data.slice(0,8)+'01',k).slice(0,7),[yy,mm]=ym.split('-').map(Number);return ym+'-'+pad(Math.min(G.dia,new Date(yy,mm,0).getDate()))};
+  const limpo=x=>{delete x.data_pag;delete x.editado;delete x.mfk;delete x.parcial;if(x.origem==='mf')x.origem='manual';return x};
+  S._acao=`Prorrogação: ${G.raiz}`;
+  if(virarFixa){
+    const gf=G.tipo==='serie'?uid('g'):g;
+    const x=limpo({...t,id:uid('m'),data:novaData(1),status:'Pendente',valor,descricao:G.raiz,rep:{tipo:'fixa',grp:gf,i:G.tipo==='serie'?1:G.n+1}});if(x.origem!=='manual')x.origem='manual';putMov(x);
+    fx[gf]={ate:x.data.slice(0,7)};setCfg({fixas:fx});estenderFixas();return -1;
+  }
+  if(G.tipo==='serie'){for(let k=1;k<=qtd;k++){const x=limpo({...t,id:uid('m'),data:novaData(k),status:'Pendente',valor});delete x.rep;x.origem='manual';putMov(x)}return qtd}
+  const tipo=G.tipo==='fixa'?'mensal':G.tipo,N=G.n+qtd;
+  for(let k=1;k<=qtd;k++){const i=G.n+k;
+    putMov(limpo({...t,id:uid('m'),data:novaData(k),status:'Pendente',valor,descricao:tipo==='parcelada'?`${G.raiz} (${i}/${N})`:G.raiz,rep:{tipo,grp:g,i,n:N}}))}
+  /* os lançamentos já existentes passam a mostrar o novo total */
+  for(const x of G.ms){const r={...x.rep,n:N};let d=x.descricao;if(tipo==='parcelada')d=`${G.raiz} (${x.rep.i}/${N})`;
+    if(x.rep.n!==N||d!==x.descricao){const y={...x,rep:r,descricao:d};if(y.origem==='mf'&&!y.editado){y.mfk=y.mfk||mfKey(y);y.editado=true}putMov(y)}}
+  if(G.tipo==='fixa'){fx[g]={...fx[g],ate:novaData(qtd).slice(0,7)};setCfg({fixas:fx})}
+  return qtd;
+}
+function openProrrogar(g){
+  const G=repGrupo(g);if(!G){toast('Esta repetição não tem prazo definido para prorrogar');return}
+  const F={qtd:G.tipo==='parcelada'?2:12,valor:String(G.valor).replace('.',','),fixa:false};
+  const nomeTipo=G.tipo==='parcelada'?'Parcelada':G.tipo==='fixa'?'Fixa (encerrada)':G.tipo==='serie'?'Todo mês até uma data (importado)':'Mensal por alguns meses';
+  const resumo=()=>{const v=r2(parseBR(F.valor));if(F.fixa)return `Passa a repetir todo mês, sem data para acabar, a partir de ${ymLab(addMonths(G.fim+'-01',1).slice(0,7))}, com ${v?brl2(v):'(valor)'} por mês. O sistema mantém sempre um ano à frente.`;
+    const q=Math.max(1,Math.min(120,parseInt(F.qtd)||1)),fim=addMonths(G.fim+'-01',q).slice(0,7);
+    return `Hoje termina em <b>${ymLab(G.fim)}</b>${G.tipo==='parcelada'?` (parcela ${G.n}/${G.n})`:''}. Com a prorrogação, termina em <b>${ymLab(fim)}</b>${G.tipo==='parcelada'?` (${G.n+q}/${G.n+q}). As descrições das parcelas já lançadas passam a mostrar o novo total`:''}. Serão criados ${q} lançamento(s) pendente(s) de ${v?brl2(v):'(valor)'}${v?`, somando ${brl2(r2(v*q))}`:''}.`};
+  const draw=()=>{dlg.innerHTML=`<div class="dhead"><h3>Prorrogar ${G.mov==='Receita'?'receita':'despesa'}</h3><button class="x" data-close aria-label="Fechar">×</button></div>
+    <div class="dbody">
+      <p style="margin:0 0 12px"><b>${esc(G.raiz)}</b><br><span class="muted">${nomeTipo} · ${esc(G.ult.grupo||'')} · ${G.ms.length} lançamento(s), ${G.pend} pendente(s)</span></p>
+      <div class="fgrid">
+        <label style="grid-column:1/-1;flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" data-p="fixa"${F.fixa?' checked':''}> Tornar fixa (todo mês, sem data para acabar)</label>
+        ${F.fixa?'':`<label>${G.tipo==='parcelada'?'Mais quantas parcelas':'Mais quantos meses'}<input type="number" min="1" max="120" data-p="qtd" value="${esc(F.qtd)}"></label>`}
+        <label>Valor de cada ${G.tipo==='parcelada'&&!F.fixa?'parcela nova':'mês novo'} (R$)<input type="text" inputmode="decimal" data-p="valor" value="${esc(F.valor)}"></label>
+        <div class="hint" data-pres style="grid-column:1/-1;margin:0">${resumo()}</div>
+      </div>
+    </div>
+    <div class="dfoot"><span></span><span style="display:flex;gap:8px"><button class="btn" data-close>Cancelar</button><button class="btn primary" data-pok>Prorrogar</button></span></div>`};
+  draw();
+  dlg.oninput=dlg.onchange=e=>{const k=e.target.dataset.p;if(!k)return;F[k]=e.target.type==='checkbox'?e.target.checked:e.target.value;if(k==='fixa'){draw();return}const h=dlg.querySelector('[data-pres]');if(h)h.innerHTML=resumo()};
+  dlg.onclick=e=>{
+    if(e.target===dlg||e.target.closest('[data-close]')){dlg.close();return}
+    if(e.target.closest('[data-pok]')){const v=r2(parseBR(F.valor)),q=parseInt(F.qtd);
+      if(!v||v<=0){toast('Informe o valor');return}if(!F.fixa&&(!q||q<1||q>120)){toast('Informe de 1 a 120');return}
+      const n=prorrogarGrupo(g,q,v,F.fixa);dlg.close();render();
+      toast(n<0?'Repetição transformada em fixa: os próximos meses entram sozinhos':`${n} lançamento(s) criados, até ${ymLab(addMonths(G.fim+'-01',q).slice(0,7))}`)}
+  };
+  if(!dlg.open)dlg.showModal();
+}
+let _przF='breve';
+function openPrazos(){
+  const draw=()=>{const todos=repGrupos(),lim=addMonths(curYM+'-01',2).slice(0,7);
+    const nB=todos.filter(G=>G.fim<=lim).length;if(_przF==='breve'&&!nB)_przF='todos';
+    const gs=todos.filter(G=>_przF==='todos'||(_przF==='breve'?G.fim<=lim:G.mov===_przF));
+    const filtros=`<div class="subtabs" role="group" style="margin:0 0 10px;flex-wrap:wrap">${[['breve',`Terminam até ${ymLab(lim)} (${nB})`],['Receita','Receitas'],['Despesa','Despesas'],['todos',`Todos (${todos.length})`]].map(([v,n])=>`<button data-pf="${v}" aria-pressed="${_przF===v}">${n}</button>`).join('')}</div>`;
+    const linha=G=>`<div style="display:flex;gap:10px;align-items:center;padding:10px 2px;border-bottom:1px solid var(--line)">
+      <div style="flex:1;min-width:0"><b>${esc(G.raiz)}</b><div class="muted" style="font-size:12px">${G.mov} · ${G.tipo==='parcelada'?`parcelada em ${G.n}x`:G.tipo==='fixa'?'fixa encerrada':G.tipo==='serie'?`todo mês, ${G.n} lançamentos`:`mensal, ${G.n} meses`} · ${esc(G.ult.grupo||'')}</div>
+      <div style="font-size:13px;margin-top:2px"><span${G.fim<=lim?' style="color:var(--warning);font-weight:600"':''}>termina em ${ymLab(G.fim)}${G.fim<curYM?' (já terminou)':''}</span> <span class="muted">· ${G.pend} pendente(s)</span></div></div>
+      <div style="text-align:right;flex-shrink:0"><div style="font-weight:600;margin-bottom:4px">${brl2(G.valor)}</div><button class="btn small" data-pg="${esc(G.grp)}">Prorrogar</button></div></div>`;
+    dlg.innerHTML=`<div class="dhead"><h3>Receitas e despesas com prazo</h3><button class="x" data-close aria-label="Fechar">×</button></div>
+    <div class="dbody">${todos.length?filtros:''}${gs.length?`<p class="hint" style="margin-top:0">Lançamentos que se repetem todo mês e têm data para terminar. Em laranja, os que terminam até ${ymLab(lim)}.</p>
+      <div>${gs.map(linha).join('')}</div>`
+      :'<p class="hint">Nenhuma receita ou despesa repetida com prazo definido. As criadas como "Mensal, por alguns meses" ou "Parcelada" aparecem aqui.</p>'}</div>
+    <div class="dfoot"><span></span><button class="btn" data-close>Fechar</button></div>`};
+  draw();dlg.oninput=dlg.onchange=null;
+  dlg.onclick=e=>{if(e.target===dlg||e.target.closest('[data-close]')){dlg.close();return}const f=e.target.closest('[data-pf]');if(f){_przF=f.dataset.pf;draw();return}const b=e.target.closest('[data-pg]');if(b)openProrrogar(b.dataset.pg)};
+  dlg.showModal();
 }
 
 
