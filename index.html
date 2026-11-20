@@ -4416,7 +4416,8 @@ function blocoCad(D){
       ${EQUIPE?'':`<label>Cliente desde<input type="month" data-k="desde" value="${esc(D.desde&&D.desde>'2001'?D.desde.slice(0,7):'')}"></label>`}
       ${EQUIPE?'':`<label>Empresa própria<select data-k="propria"><option value="">Não, é cliente</option><option value="1"${D.propria?' selected':''}>Sim, é a JM Gestão (fora da contagem de clientes e da carteira)</option></select></label>`}
       <label>Aniversário (cliente ou responsável)<input type="date" data-k="aniversario" value="${esc(D.aniversario||'')}"></label>
-      <label>Certificado digital vence em<input type="date" data-k="certificado_venc" value="${esc(D.certificado_venc||'')}"></label>
+      <label>Certificado digital<select data-k="sem_certificado"><option value="">Tem certificado digital</option><option value="1"${D.sem_certificado?' selected':''}>Não tem certificado digital</option></select></label>
+      <label>Certificado digital vence em<input type="date" data-k="certificado_venc" value="${esc(D.certificado_venc||'')}" title="Deixe em branco se o cliente não tiver certificado"></label>
       <label>Programa de SST (PGR/PCMSO) vence em<input type="date" data-k="sst_venc" value="${esc(D.sst_venc||'')}"></label>
       <label>Inscrição municipal<input type="text" data-k="insc_municipal" value="${esc(D.insc_municipal||'')}"></label>
       <label>Inscrição estadual<input type="text" data-k="insc_estadual" value="${esc(D.insc_estadual||'')}"></label>
@@ -4517,10 +4518,10 @@ const addAnos=(iso,n)=>{const [y,m,d]=iso.split('-').map(Number);const last=new 
 function renovacoes(d,dias=30){
   const fim=addDays(d,dias),out=[];
   for(const c of clientes()){if(c.status!=='Ativo')continue;
-    for(const [k,n] of RENOV){const v=c[k];if(!v||!/^\d{4}-\d{2}-\d{2}$/.test(v))continue;if(v<=fim)out.push({c,k,n,v,venc:v<d})}}
+    for(const [k,n] of RENOV){if(k==='certificado_venc'&&c.sem_certificado)continue;const v=c[k];if(!v||!/^\d{4}-\d{2}-\d{2}$/.test(v))continue;if(v<=fim)out.push({c,k,n,v,venc:v<d})}}
   return out.sort((a,b)=>a.v.localeCompare(b.v));
 }
-let semRenov=()=>clientes().filter(c=>c.status==='Ativo'&&(c.regime==='Simples Nacional'||ehPropria(c))&&(!c.certificado_venc||!c.sst_venc));
+let semRenov=()=>clientes().filter(c=>c.status==='Ativo'&&(c.regime==='Simples Nacional'||ehPropria(c))&&((!c.certificado_venc&&!c.sem_certificado)||!c.sst_venc));
 function blocoRenov(d){
   const L=renovacoes(d),sem=semRenov();
   if(!L.length&&!sem.length)return'';
@@ -4528,7 +4529,7 @@ function blocoRenov(d){
     ${L.length?`<ul class="list">${L.map(x=>`<li class="tk-row" style="flex-wrap:wrap"><span class="tk-ic ${x.venc?'late':''}">${ic(x.venc?'alert':'obrig')}</span><div class="grow" style="min-width:180px"><div class="t">${esc(x.n)}: ${esc(x.c.nome)}</div><div class="m">${x.venc?`<span class="neg">venceu em ${dBR(x.v)}</span>`:x.v===d?'vence hoje':`vence em ${dBR(x.v)}`}</div></div>
       ${EQUIPE?'':`<button class="btn small" data-act="renovOk" data-c="${esc(x.c.id)}" data-k="${x.k}">Renovado, +1 ano</button>`}<button class="btn small" data-act="${EQUIPE?'cliEq':'editCli'}" data-id="${esc(x.c.id)}">Abrir</button></li>`).join('')}</ul>`:'<p class="hint">Nada vence nos próximos 30 dias.</p>'}
     ${sem.length?`<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">${sem.length} empresa(s) do Simples sem a data do certificado ou do SST. Clique para ver e preencher na ficha.</summary>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${sem.map(c=>`<button class="btn small" data-act="${EQUIPE?'cliEq':'editCli'}" data-id="${esc(c.id)}" title="Falta: ${[!c.certificado_venc?'certificado':'',!c.sst_venc?'SST':''].filter(Boolean).join(' e ')}">${esc(c.nome)}</button>`).join('')}</div></details>`:''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${sem.map(c=>`<button class="btn small" data-act="${EQUIPE?'cliEq':'editCli'}" data-id="${esc(c.id)}" title="Falta: ${[!c.certificado_venc&&!c.sem_certificado?'certificado':'',!c.sst_venc?'SST':''].filter(Boolean).join(' e ')}">${esc(c.nome)}</button>`).join('')}</div></details>`:''}
   </div>`;
 }
 {const _vh=vHoje;vHoje=function(){const h=_vh();const b=blocoRenov(S.hDia||todayISO);if(!b)return h;const i=h.indexOf('<div class="panel tk-sec">');return i<0?h+b:h.slice(0,i)+b+h.slice(i)}}
@@ -4537,7 +4538,7 @@ main.addEventListener('click',e=>{const b=e.target.closest('[data-act="renovOk"]
   c[k]=novo;S._acao=`Renovação registrada: ${c.nome}`;salvar('cadastros','clientes');render();toast(`Próxima renovação em ${dBR(novo)}. Ajuste a data na ficha se precisar.`)});
 if(EQUIPE&&typeof openCliEq==='function'){const _oe2=openCliEq;openCliEq=function(id){_oe2(id);const c=cliById(id);if(!c)return;const g=dlg.querySelector('.dbody .fgrid');if(!g)return;
   const f=(l,v)=>`<div class="fl">${l}<b style="color:var(--fg);font-weight:500">${esc(v||'—')}</b></div>`;
-  g.insertAdjacentHTML('beforeend',f('Certificado digital vence em',c.certificado_venc?dBR(c.certificado_venc):'')+f('Programa de SST vence em',c.sst_venc?dBR(c.sst_venc):''))}}
+  g.insertAdjacentHTML('beforeend',f('Certificado digital',c.sem_certificado?'Não tem certificado digital':c.certificado_venc?'vence em '+dBR(c.certificado_venc):'')+f('Programa de SST vence em',c.sst_venc?dBR(c.sst_venc):''))}}
 /* JM Gestão: anuidade do CRC e certificado em junho */
 function jmExtras(){
   if(EQUIPE||cfg().jmExtras)return;const c=clientes().find(ehPropria);if(!c)return;
@@ -4697,7 +4698,7 @@ renovacoes=function(d,dias=30){
     for(const [k,n] of RENOV){if(k==='sst_venc'&&!temFunc(c))continue;const v=c[k];if(!v||!/^\d{4}-\d{2}-\d{2}$/.test(v))continue;if(v<=fim)out.push({c,k,n,v,venc:v<d})}}
   return out.sort((a,b)=>a.v.localeCompare(b.v));
 };
-semRenov=()=>clientes().filter(c=>c.status==='Ativo'&&(c.regime==='Simples Nacional'||ehPropria(c))&&(!c.certificado_venc||(c.funcionarios!=='nao'&&!c.sst_venc)));
+semRenov=()=>clientes().filter(c=>c.status==='Ativo'&&(c.regime==='Simples Nacional'||ehPropria(c))&&((!c.certificado_venc&&!c.sem_certificado)||(c.funcionarios!=='nao'&&!c.sst_venc)));
 {const _bR=blocoRenov;blocoRenov=function(d){let h=_bR(d);
   h=h.replace(/title="Falta: ([^"]*)"/g,(m,f)=>m);return h.replace('sem a data do certificado ou do SST.','sem a data do certificado, ou do SST (quando tem funcionários ou ainda não foi informado).')}}
 if(!EQUIPE){
@@ -5397,7 +5398,7 @@ if(!EQUIPE){
    financeiro/clientes -> honorários, forma de cobrança, código do Simples etc., por cliente (só o dono)
    config/geral        -> configurações sem valor; financeiro/config -> o resto (só o dono)
    As regras do banco garantem isso; a tela só esconde os menus. */
-var PUB_CLI=new Set(['id','nome','cpf_cnpj','telefone','tipo_cliente','status','desde','data_inativacao','regime','natureza','obrig','aniversario','insc_municipal','insc_estadual','nire','propria','certificado_venc','sst_venc','socios','funcionarios','semIE','ieOk','razao_social','situacao_rf','regime_rf','historico','email']);
+var PUB_CLI=new Set(['id','nome','cpf_cnpj','telefone','tipo_cliente','status','desde','data_inativacao','regime','natureza','obrig','aniversario','insc_municipal','insc_estadual','nire','propria','certificado_venc','sem_certificado','sst_venc','socios','funcionarios','semIE','ieOk','razao_social','situacao_rf','regime_rf','historico','email']);
 var LOADED=new Set(),MERGED=new WeakSet(),_migFin=false,_finPend={cfg:null};
 const OWNER_COLS={financeiro:'fin',usuarios:'usu'};
 if(UNIF&&!EQUIPE){Object.assign(COLS,OWNER_COLS);S.fin=S.fin||{};S.usu=S.usu||{}}
@@ -5813,9 +5814,9 @@ function robVCad(){
       return `<tr><td><span class="lname">${esc(c.nome)}</span><div class="muted" style="font-size:12px">${esc(c.cpf_cnpj||'sem CNPJ')} · ${esc(c.regime||'')}</div></td>
       <td class="l" data-l="I.E."><input type="text" data-rie="${esc(c.id)}" value="${esc(fmtIE(c.insc_estadual))}" placeholder="—" style="width:120px">${dig(c.insc_estadual)&&ies[dig(c.insc_estadual)]!==undefined?'':''}</td>
       <td data-l="ICMS"><input type="checkbox" data-rcli="icms" data-id="${esc(c.id)}"${r.icms?' checked':''}${dig(c.insc_estadual)?'':' disabled title="Informe a I.E."'}></td>
-      <td data-l="XML"><input type="checkbox" data-rcli="xml" data-id="${esc(c.id)}"${r.xml?' checked':''}></td>
-      <td class="l" data-l="Certificado"><select data-rcert="${esc(c.id)}" style="max-width:260px"><option value="">${auto?'Automático: '+esc(auto):'— nenhum encontrado —'}</option>${certs.map(x=>`<option value="${esc(x.arquivo)}"${x.arquivo===cert?' selected':''}>${esc(x.arquivo)}${x.validade?' · vence '+dBR(x.validade):''}</option>`).join('')}</select>
-        ${r.xml&&!cert&&!auto?'<div style="font-size:12px;color:var(--destructive)">sem certificado: o XML não será baixado</div>':''}</td></tr>`}).join('')}
+      <td data-l="XML"><input type="checkbox" data-rcli="xml" data-id="${esc(c.id)}"${r.xml&&!c.sem_certificado?' checked':''}${c.sem_certificado?' disabled title="Cliente sem certificado digital"':''}></td>
+      <td class="l" data-l="Certificado">${c.sem_certificado?'<span class="muted">Não tem certificado digital</span>':''}<select${c.sem_certificado?' hidden':''} data-rcert="${esc(c.id)}" style="max-width:260px"><option value="">${auto?'Automático: '+esc(auto):'— nenhum encontrado —'}</option>${certs.map(x=>`<option value="${esc(x.arquivo)}"${x.arquivo===cert?' selected':''}>${esc(x.arquivo)}${x.validade?' · vence '+dBR(x.validade):''}</option>`).join('')}</select>
+        ${r.xml&&!cert&&!auto&&!c.sem_certificado?'<div style="font-size:12px;color:var(--destructive)">sem certificado: o XML não será baixado</div>':''}</td></tr>`}).join('')}
     </tbody></table></div>
     ${a?.certificados?.some(c=>!c.ok)?`<p class="hint" style="margin-top:10px">Certificados que o PC não conseguiu abrir: ${a.certificados.filter(c=>!c.ok).map(c=>esc(c.arquivo)).join(', ')}. Informe a senha no programa "3 - Baixar de TODOS os clientes" do PC.</p>`:''}
   </div>`}
@@ -5902,7 +5903,7 @@ main.addEventListener('click',async e=>{if(S.tab!=='robos')return;const b=e.targ
   else if(a==='robRecusar'||a==='robRevogar'){if(a==='robRevogar'&&!confirm(`Desligar o computador "${b.dataset.m}"? Os robôs dele param de funcionar até nova autorização.`))return;
     try{if(a==='robRevogar')await store.db.doc('robos_acesso/'+b.dataset.uid).delete();await store.db.doc('robos_pedidos/'+b.dataset.uid).delete();toast(a==='robRevogar'?'Computador desligado':'Pedido recusado')}catch(err){toast('Falhou: '+(err.message||err))}}
   else if(a==='robTodos'){const k=b.dataset.k,C=robCfg(),cl={...C.clientes},certs=(robAg()?.certificados||[]).filter(c=>c.ok),docs=new Set(certs.map(c=>c.doc));let n=0;
-    for(const c of clientes().filter(c=>c.status==='Ativo')){const ok=k==='icms'?!!dig(c.insc_estadual):docs.has(dig(c.cpf_cnpj))||!!(cl[c.id]?.cert);if(!ok||cl[c.id]?.[k])continue;
+    for(const c of clientes().filter(c=>c.status==='Ativo')){const ok=k==='icms'?!!dig(c.insc_estadual):!c.sem_certificado&&(docs.has(dig(c.cpf_cnpj))||!!(cl[c.id]?.cert));if(!ok||cl[c.id]?.[k])continue;
       cl[c.id]={...(cl[c.id]||{}),[k]:true,nome:c.nome||'',cnpj:dig(c.cpf_cnpj),ie:dig(c.insc_estadual)};n++}
     salvarRob('config',{...C,clientes:cl});toast(`${n} cliente(s) marcado(s)`);render()}
 });
