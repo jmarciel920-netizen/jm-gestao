@@ -5684,7 +5684,7 @@ function robSync(force){
 function robCli(id,patch){const cfgR=robCfg(),c=cliById(id);if(!c)return;
   const cur=(cfgR.clientes||{})[id]||{};
   const n={...cur,...patch,nome:c.nome||'',cnpj:dig(c.cpf_cnpj),ie:dig(c.insc_estadual)};
-  if(!n.icms&&!n.xml&&!n.cert){const cl={...cfgR.clientes};delete cl[id];salvarRob('config',{...cfgR,clientes:cl})}
+  if(!n.icms&&!n.xml&&!n.cert&&!n.das){const cl={...cfgR.clientes};delete cl[id];salvarRob('config',{...cfgR,clientes:cl})}
   else salvarRob('config',{...cfgR,clientes:{...(cfgR.clientes||{}),[id]:n}})}
 
 /* pedidos de pareamento (computador querendo se ligar) */
@@ -5693,12 +5693,12 @@ function robEscutar(){if(_robEsc||!store.db)return;_robEsc=true;
   try{store.db.collection('robos_pedidos').onSnapshot(s=>{robPedidos=s.docs.map(d=>({...d.data(),uid:d.id}));if(S.tab==='robos')render()},()=>{})}catch(e){}
   try{store.db.collection('robos_acesso').onSnapshot(s=>{robAcessos=s.docs.map(d=>({...d.data(),uid:d.id}));if(S.tab==='robos')render()},()=>{})}catch(e){}}
 
-function robTabs(){return `<div class="bar-tools"><div class="subtabs" role="group" aria-label="Visão">${[['painel','Painel'],['icms','Guias de ICMS'],['xml','XMLs de compras'],['cad','Clientes e horários']].map(([k,n])=>`<button data-act="robV" data-v="${k}" aria-pressed="${S.robV===k}">${n}</button>`).join('')}</div></div>`}
+function robTabs(){return `<div class="bar-tools"><div class="subtabs" role="group" aria-label="Visão">${[['painel','Painel'],['icms','Guias de ICMS'],['xml','XMLs de compras'],['das','DAS MEI'],['cad','Clientes e horários']].map(([k,n])=>`<button data-act="robV" data-v="${k}" aria-pressed="${S.robV===k}">${n}</button>`).join('')}</div></div>`}
 
 function vRobos(){robEscutar();setTimeout(()=>robSync(false),0);
   const v=S.robV;
   return ph('Robôs fiscais','Download de XML de compras e consulta de guias de ICMS, feitos pelo agente no PC do escritório')+robTabs()+
-    (v==='icms'?robVIcms():v==='xml'?robVXml():v==='cad'?robVCad():robVPainel());}
+    (v==='das'?robVDas():v==='icms'?robVIcms():v==='xml'?robVXml():v==='cad'?robVCad():robVPainel());}
 
 function robStatusPanel(){
   const a=robAg(),on=robOnline();
@@ -5710,7 +5710,7 @@ function robStatusPanel(){
   return `<div class="panel" style="margin-bottom:16px${pend.length?';border-color:color-mix(in srgb,var(--warning) 50%,var(--border))':''}">
     <h3>Agente do PC <small>${a?`${esc(a.maquina||'')} · versão ${esc(a.versao||'')}`:''}</small></h3>
     ${a?`<p style="margin:0 0 6px"><span class="chip ${on?'ok':'fora'}" style="margin:0 6px 0 0">${on?'Ligado':'Desligado'}</span>${on?(a.trabalhando?`<b>${esc(a.trabalhando)}…</b>`:'aguardando tarefas'):`último sinal ${haQuanto(a.visto)} (${dtHora(a.visto)})`}</p>
-      <p class="hint" style="margin:0">Próximos: XML ${esc(a.proximo?.xml||'—')} · ICMS ${esc(a.proximo?.icms||'—')}</p>`
+      <p class="hint" style="margin:0">Próximos: XML ${esc(a.proximo?.xml||'—')} · ICMS ${esc(a.proximo?.icms||'—')}${a.proximo?.das&&Object.values(robCfg().clientes||{}).some(x=>x.das)?' · DAS MEI '+esc(a.proximo.das):''}</p>`
       :`<p class="hint" style="margin:0">Nenhum PC ligado ainda. No computador do escritório, abra <b>"8 - Ligar este PC ao sistema"</b> da pasta dos robôs e autorize o código que aparecer.</p>`}
     ${pend.length?`<ul class="list" style="margin-top:10px">${pares}</ul>`:''}
     ${robAcessos.length&&S.robVerPCs?`<ul class="list" style="margin-top:10px">${lig}</ul>`:''}
@@ -5727,7 +5727,7 @@ function robVPainel(){
   let b=0,ag=0,er=0;for(const c of Object.values(R)){const m=c.meses?.[ym];if(m){b+=m.b||0;ag+=m.a||0}if(c.erro)er++}
   const certs=(robAg()?.certificados||[]).filter(c=>!c.ignorado),certRuim=certs.filter(c=>!c.ok||(c.validade&&c.validade<todayISO)),certVence=certs.filter(c=>c.ok&&c.validade&&c.validade>=todayISO&&(new Date(c.validade)-Date.now())<30*864e5);
   const cmds=[...(S.rob.comandos?.itens||[])].sort((x,y)=>String(y.pedido).localeCompare(String(x.pedido))).slice(0,8);
-  const nomeCmd=c=>c.tipo==='icms'?`Consultar guias de ICMS ${esc(c.params?.de&&c.params.de!==c.params.ate?c.params.de+' a '+c.params.ate:(c.params?.ref||c.params?.de||''))}${c.params?.cli?.nome?' – '+esc(c.params.cli.nome):''}`:c.tipo==='xml'?(c.params?.clienteId?`Baixar XML – ${esc(cliById(c.params.clienteId)?.nome||'cliente')}`:'Baixar XML de todos'):c.tipo==='certs'?'Atualizar certificados':esc(c.tipo);
+  const nomeCmd=c=>c.tipo==='das'?`Gerar DAS MEI ${esc(c.params?.de&&c.params.de!==c.params.ate?c.params.de+' a '+c.params.ate:(c.params?.ref||c.params?.de||''))}${c.params?.cli?.nome?' – '+esc(c.params.cli.nome):''}`:c.tipo==='icms'?`Consultar guias de ICMS ${esc(c.params?.de&&c.params.de!==c.params.ate?c.params.de+' a '+c.params.ate:(c.params?.ref||c.params?.de||''))}${c.params?.cli?.nome?' – '+esc(c.params.cli.nome):''}`:c.tipo==='xml'?(c.params?.clienteId?`Baixar XML – ${esc(cliById(c.params.clienteId)?.nome||'cliente')}`:'Baixar XML de todos'):c.tipo==='certs'?'Atualizar certificados':esc(c.tipo);
   const chipSt=s=>s==='ok'?'<span class="chip ok">concluído</span>':s==='erro'?'<span class="chip fora">erro</span>':s==='executando'?'<span class="chip info">executando</span>':'<span class="chip man">na fila</span>';
   return robStatusPanel()+`<div class="kpis">
     ${stat(`Guias de ICMS ${esc(ref)}`,com.length?String(com.length):'0',d?`${com.length?brl2(tot)+' no total':'nenhum cliente com guia'} · ${d.rodadas?.length||0} consulta(s)`:'ainda não consultado','alert',com.length?'d':'a')}
@@ -5820,6 +5820,67 @@ function robVCad(){
     ${a?.certificados?.some(c=>!c.ok)?`<p class="hint" style="margin-top:10px">Certificados que o PC não conseguiu abrir: ${a.certificados.filter(c=>!c.ok).map(c=>esc(c.arquivo)).join(', ')}. Informe a senha no programa "3 - Baixar de TODOS os clientes" do PC.</p>`:''}
   </div>`}
 
+/* ---------- DAS MEI (Integra Contador): o agente gera, a página mostra e entrega ---------- */
+const robDasRefs=()=>Object.keys(S.rob).filter(k=>/^das_\d{4}-\d{2}$/.test(k)).map(k=>isoRef(k.slice(4))).sort((a,b)=>refIso(b).localeCompare(refIso(a)));
+const robEhMei=c=>/MEI/i.test(String(c.regime||''))||/MEI/i.test(String(c.natureza||''));
+function robVDas(){
+  const C=robCfg(),cl=C.clientes||{},a=robAg();
+  const refs=robDasRefs();const ref=S.robDasRef&&refs.includes(S.robDasRef)?S.robDasRef:(refs[0]||refAnt());
+  const d=S.rob['das_'+refIso(ref)];const itens=[...(d?.itens||[])].sort((x,y)=>(x.situacao==='gerado'?1:0)-(y.situacao==='gerado'?1:0)||String(x.nome).localeCompare(String(y.nome)));
+  const ger=itens.filter(x=>x.situacao==='gerado'),tot=ger.reduce((s,x)=>s+(+x.total||0),0);
+  const meis=clientes().filter(c=>(c.status==='Ativo'&&robEhMei(c))||cl[c.id]?.das).sort((x,y)=>String(x.nome).localeCompare(String(y.nome)));
+  const nDas=Object.values(cl).filter(x=>x.das).length;
+  const chip=x=>x.situacao==='gerado'?'<span class="chip ok" style="margin:0">gerado</span>':`<span class="chip ${x.situacao==='erro'||x.situacao==='sem acesso'?'fora':'man'}" style="margin:0">${esc(x.situacao)}</span>`;
+  return `${a&&a.integra===false?`<div class="panel" style="margin:12px 0;border-color:color-mix(in srgb,var(--warning) 50%,var(--border))"><h3>Falta configurar o Integra Contador no PC</h3><p class="hint" style="margin:0">No computador do escritório, abra <b>"9 - Configurar Integra Contador"</b>, cole a Consumer Key e a Consumer Secret e clique em "Salvar e testar".</p></div>`:''}
+  <div class="cols eq" style="margin-top:12px"><div class="panel"><h3>Gerar DAS</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <select id="robDasCli" aria-label="Cliente" style="max-width:220px"><option value="">Todos os MEI marcados</option>${meis.filter(c=>dig(c.cpf_cnpj).length===14).map(c=>`<option value="${esc(c.id)}"${S.robDasCli===c.id?' selected':''}>${esc(c.nome)}</option>`).join('')}</select>
+      <label style="display:flex;gap:6px;align-items:center">de <input type="text" id="robDasDe" value="${esc(S.robDasDe||refAnt())}" style="width:90px" inputmode="numeric" aria-label="De mm/aaaa"></label>
+      <label style="display:flex;gap:6px;align-items:center">até <input type="text" id="robDasAte" value="${esc(S.robDasAte||refAnt())}" style="width:90px" inputmode="numeric" aria-label="Até mm/aaaa"></label>
+      <button class="btn primary" data-act="robDasGerar">Gerar</button></div>
+    <p class="hint" style="margin:0">Um mês só: deixe "de" e "até" iguais. Meses atrasados saem com multa e juros calculados até hoje.</p></div>
+  <div class="panel"><h3>Geração automática</h3><p class="hint">Todo mês o PC gera o DAS do mês anterior de todos os MEI marcados abaixo.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><label class="fl">Dia do mês<input type="number" min="1" max="28" data-rcfg="dasDia" value="${esc(C.dasDia||5)}" style="width:80px"></label>
+    <label class="fl">Hora<input type="time" data-rcfg="dasHora" value="${esc(C.dasHora||'08:00')}"></label></div>
+    ${a?.proximo?.das&&nDas?`<p class="hint" style="margin:8px 0 0">Próxima geração: ${esc(a.proximo.das)}</p>`:''}</div></div>
+  <div class="bar-tools" style="margin-top:4px"><label>Mês <select data-act="robDasRef">${(refs.length?refs:[ref]).map(r=>`<option${r===ref?' selected':''}>${r}</option>`).join('')}</select></label></div>
+  ${d?`<div class="sumline"><span><b>${ger.length}</b> DAS gerado(s)</span><span>Total: <b>${brl2(tot)}</b></span>${itens.length-ger.length?`<span><b>${itens.length-ger.length}</b> com aviso ou erro</span>`:''}<span>Atualizado ${dtHora(d.atualizado)}</span></div>
+  <div class="tscroll"><table class="cards"><thead><tr><th class="l">Cliente</th><th class="l">Situação</th><th>Vencimento</th><th>Total</th><th class="l">Guia</th></tr></thead><tbody>
+  ${itens.map(x=>{const c=cliById(x.clienteId);return `<tr><td><span class="lname">${esc(x.nome||c?.nome||x.cnpj)}</span><div class="muted" style="font-size:12px">${esc(fmtDoc(x.cnpj))}</div></td>
+    <td class="l" data-l="Situação">${chip(x)}${x.mensagem?`<div class="muted" style="font-size:12px;max-width:380px">${esc(x.mensagem)}</div>`:''}</td>
+    <td data-l="Vencimento">${esc(x.vencimento||'—')}</td><td data-l="Total">${x.total!=null?`<b>${brl2(+x.total)}</b>${(+x.multa||0)+(+x.juros||0)>0?`<div class="muted" style="font-size:12px">multa+juros ${brl2((+x.multa||0)+(+x.juros||0))}</div>`:''}`:'—'}</td>
+    <td class="l" data-l="Guia">${x.pdf?`<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn small" data-act="robDasPdf" data-cnpj="${esc(x.cnpj)}" data-ref="${esc(ref)}" data-nome="${esc(x.nome||'')}">PDF</button>${c&&dig(c.telefone).length>=10?`<button class="btn small" data-act="robDasZap" data-id="${esc(c.id)}" data-cnpj="${esc(x.cnpj)}" data-ref="${esc(ref)}" data-total="${esc(x.total)}" data-venc="${esc(x.vencimento||'')}">WhatsApp</button>`:''}</span>`:'—'}</td></tr>`}).join('')}
+  </tbody></table></div>`:`<div class="empty"><h2 style="margin:0">Nenhum DAS de ${esc(ref)} ainda</h2><p>Marque os MEI abaixo e use "Gerar", ou espere a geração automática.</p></div>`}
+  <div class="panel" style="margin-top:16px"><h3>Clientes MEI <small>${nDas} marcado(s)</small></h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn small" data-act="robDasTodos">Marcar todos os MEI ativos</button></div>
+    ${meis.length?`<div class="tscroll"><table class="cards"><thead><tr><th class="l">Cliente</th><th class="l">CNPJ</th><th>Gerar DAS</th></tr></thead><tbody>
+    ${meis.map(c=>`<tr><td><span class="lname">${esc(c.nome)}</span>${c.status!=='Ativo'?'<span class="chip man">inativo</span>':''}</td><td class="l" data-l="CNPJ">${esc(c.cpf_cnpj||'sem CNPJ')}</td>
+      <td data-l="Gerar DAS"><input type="checkbox" data-rcli="das" data-id="${esc(c.id)}"${cl[c.id]?.das?' checked':''}${dig(c.cpf_cnpj).length===14?'':' disabled title="Sem CNPJ no cadastro"'}></td></tr>`).join('')}</tbody></table></div>`
+    :'<p class="hint">Nenhum cliente com regime MEI no cadastro.</p>'}</div>`}
+async function robDasBaixar(cnpj,ref,nome){
+  const per=refIso(ref).replace('-','');const r=await store.db.doc(`robos_pdf/das_${cnpj}_${per}`).get();
+  if(!r.exists){toast('PDF não encontrado — gere de novo');return null}
+  const d=r.data(),bin=atob(d.pdf),u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+  const b=new Blob([u8],{type:'application/pdf'}),url=URL.createObjectURL(b),el=document.createElement('a');
+  el.href=url;el.download=d.arquivo||`DAS-MEI ${ref.replace('/','-')} ${nome||cnpj}.pdf`;document.body.appendChild(el);el.click();el.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);return true}
+main.addEventListener('click',async e=>{if(S.tab!=='robos'||S.robV!=='das')return;const b=e.target.closest('[data-act]');if(!b)return;const a=b.dataset.act;
+  if(a==='robDasGerar'){const de=(document.getElementById('robDasDe')?.value||'').trim(),ate=(document.getElementById('robDasAte')?.value||'').trim(),cid=document.getElementById('robDasCli')?.value||'';
+    const ok=r=>/^(0[1-9]|1[0-2])\/\d{4}$/.test(r);if(!ok(de)||!ok(ate)){toast('Use mm/aaaa nos dois campos');return}
+    const n=(+ate.slice(3)*12+ +ate.slice(0,2))-(+de.slice(3)*12+ +de.slice(0,2))+1;if(n<1){toast('"De" precisa ser antes de "até"');return}if(n>24){toast('No máximo 24 meses por vez');return}
+    if(!cid&&!Object.values(robCfg().clientes||{}).some(x=>x.das)){toast('Marque ao menos um MEI na lista abaixo');return}
+    S.robDasDe=de;S.robDasAte=ate;S.robDasCli=cid;const c=cid?cliById(cid):null;
+    robPedir('das',{de,ate,...(c?{clienteId:c.id,cli:{cnpj:dig(c.cpf_cnpj),nome:c.nome||''}}:{})})}
+  else if(a==='robDasPdf'){try{await robDasBaixar(b.dataset.cnpj,b.dataset.ref,b.dataset.nome)}catch(err){toast('Não consegui baixar: '+(err.message||err))}}
+  else if(a==='robDasZap'){const c=cliById(b.dataset.id);if(!c)return;try{await robDasBaixar(b.dataset.cnpj,b.dataset.ref,c.nome)}catch(err){}
+    const tel=dig(c.telefone),num=tel.length<=11?'55'+tel:tel;const nome=String(c.nome||'').split(' ')[0];
+    const txt=`Olá, ${nome}! Segue o DAS do MEI referente a ${b.dataset.ref}, no valor de ${brl2(+b.dataset.total||0)}${b.dataset.venc?`, com vencimento em ${b.dataset.venc}`:''}. O PDF está em anexo. Qualquer dúvida, estou à disposição. — JM Gestão`;
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(txt)}`,'_blank');toast('PDF baixado: anexe no WhatsApp que abriu')}
+  else if(a==='robDasTodos'){const C=robCfg(),cl={...C.clientes};let n=0;
+    for(const c of clientes().filter(c=>c.status==='Ativo'&&robEhMei(c)&&dig(c.cpf_cnpj).length===14)){if(cl[c.id]?.das)continue;cl[c.id]={...(cl[c.id]||{}),das:true,nome:c.nome||'',cnpj:dig(c.cpf_cnpj),ie:dig(c.insc_estadual)};n++}
+    salvarRob('config',{...C,clientes:cl});toast(`${n} MEI marcado(s)`);render()}
+});
+main.addEventListener('change',e=>{if(S.tab!=='robos'||S.robV!=='das')return;const t=e.target;
+  if(t.dataset.act==='robDasRef'){S.robDasRef=t.value;render()}});
 main.addEventListener('click',async e=>{if(S.tab!=='robos')return;const b=e.target.closest('[data-act]');if(!b)return;const a=b.dataset.act;
   if(a==='robV'){S.robV=b.dataset.v;render()}
   else if(a==='robIcms'){const r=(document.getElementById('robRef')?.value||'').trim();if(!/^(0[1-9]|1[0-2])\/\d{4}$/.test(r)){toast('Referência no formato mm/aaaa');return}S.robRef=r;robPedir('icms',{ref:r})}
