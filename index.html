@@ -5727,7 +5727,7 @@ function robVPainel(){
   let b=0,ag=0,er=0;for(const c of Object.values(R)){const m=c.meses?.[ym];if(m){b+=m.b||0;ag+=m.a||0}if(c.erro)er++}
   const certs=(robAg()?.certificados||[]).filter(c=>!c.ignorado),certRuim=certs.filter(c=>!c.ok||(c.validade&&c.validade<todayISO)),certVence=certs.filter(c=>c.ok&&c.validade&&c.validade>=todayISO&&(new Date(c.validade)-Date.now())<30*864e5);
   const cmds=[...(S.rob.comandos?.itens||[])].sort((x,y)=>String(y.pedido).localeCompare(String(x.pedido))).slice(0,8);
-  const nomeCmd=c=>c.tipo==='icms'?`Consultar guias de ICMS ${esc(c.params?.ref||'')}`:c.tipo==='xml'?(c.params?.clienteId?`Baixar XML – ${esc(cliById(c.params.clienteId)?.nome||'cliente')}`:'Baixar XML de todos'):c.tipo==='certs'?'Atualizar certificados':esc(c.tipo);
+  const nomeCmd=c=>c.tipo==='icms'?`Consultar guias de ICMS ${esc(c.params?.de&&c.params.de!==c.params.ate?c.params.de+' a '+c.params.ate:(c.params?.ref||c.params?.de||''))}${c.params?.cli?.nome?' – '+esc(c.params.cli.nome):''}`:c.tipo==='xml'?(c.params?.clienteId?`Baixar XML – ${esc(cliById(c.params.clienteId)?.nome||'cliente')}`:'Baixar XML de todos'):c.tipo==='certs'?'Atualizar certificados':esc(c.tipo);
   const chipSt=s=>s==='ok'?'<span class="chip ok">concluído</span>':s==='erro'?'<span class="chip fora">erro</span>':s==='executando'?'<span class="chip info">executando</span>':'<span class="chip man">na fila</span>';
   return robStatusPanel()+`<div class="kpis">
     ${stat(`Guias de ICMS ${esc(ref)}`,com.length?String(com.length):'0',d?`${com.length?brl2(tot)+' no total':'nenhum cliente com guia'} · ${d.rodadas?.length||0} consulta(s)`:'ainda não consultado','alert',com.length?'d':'a')}
@@ -5740,9 +5740,15 @@ function robVPainel(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
       <button class="btn primary" data-act="robIcms">Consultar guias de ICMS</button>
       <label style="display:flex;gap:6px;align-items:center">referência <input type="text" id="robRef" value="${esc(S.robRef||refAnt())}" style="width:90px" inputmode="numeric" aria-label="Referência mm/aaaa"></label></div>
+    <div style="border-top:1px solid var(--border);margin:4px 0 12px;padding-top:10px"><div style="font-weight:600;font-size:14px;margin-bottom:6px">Cliente novo ou meses antigos</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="robCliAnt" aria-label="Cliente" style="max-width:240px"><option value="">Todos os clientes do ICMS</option>${clientes().filter(c=>dig(c.insc_estadual).length===9&&(c.status==='Ativo'||robCfg().clientes?.[c.id])).sort((x,y)=>String(x.nome).localeCompare(String(y.nome))).map(c=>`<option value="${esc(c.id)}"${S.robCliAnt===c.id?' selected':''}>${esc(c.nome)}</option>`).join('')}</select>
+      <label style="display:flex;gap:6px;align-items:center">de <input type="text" id="robDe" value="${esc(S.robDe||refAnt())}" style="width:90px" inputmode="numeric" aria-label="De mm/aaaa"></label>
+      <label style="display:flex;gap:6px;align-items:center">até <input type="text" id="robAte" value="${esc(S.robAte||refAnt())}" style="width:90px" inputmode="numeric" aria-label="Até mm/aaaa"></label>
+      <button class="btn" data-act="robIcmsAnt">Consultar</button></div>
+      <p class="hint" style="margin:6px 0 0">Consulta mês a mês (até 24 meses). Cada mês aparece em Guias de ICMS. Só a I.E. precisa estar no cadastro.</p></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="robXml">Baixar XMLs de todos</button><button class="btn" data-act="robCerts">Atualizar lista de certificados</button></div>
     ${!robOnline()?`<p class="hint" style="margin:10px 0 0">O PC está desligado: os pedidos ficam na fila e rodam quando ele ligar.</p>`:''}</div>
-  <div class="panel"><h3>Últimos pedidos</h3>${cmds.length?`<ul class="list">${cmds.map(c=>`<li style="flex-wrap:wrap"><div class="grow"><div class="t">${nomeCmd(c)}${chipSt(c.status)}</div><div class="m">pedido ${dtHora(c.pedido)}${c.fim?' · terminou '+dtHora(c.fim):''}${c.msg?' · '+esc(c.msg):''}</div>
+  <div class="panel"><h3>Últimos pedidos</h3>${cmds.length?`<ul class="list">${cmds.map(c=>`<li style="flex-wrap:wrap"><div class="grow"><div class="t" style="white-space:normal">${nomeCmd(c)}${chipSt(c.status)}</div><div class="m">pedido ${dtHora(c.pedido)}${c.fim?' · terminou '+dtHora(c.fim):''}${c.msg?' · '+esc(c.msg):''}</div>
       ${c.log&&c.log.length&&S.robLog===c.id?`<pre style="white-space:pre-wrap;font-size:11px;max-height:220px;overflow:auto;background:var(--muted-bg);padding:8px;border-radius:8px;margin:6px 0 0">${esc(c.log.join('\n'))}</pre>`:''}</div>
       ${c.log&&c.log.length?`<button class="linkbtn" data-act="robLog" data-id="${esc(c.id)}" style="color:var(--primary)">${S.robLog===c.id?'esconder':'detalhes'}</button>`:''}</li>`).join('')}</ul>`:'<p class="hint">Nenhum pedido ainda.</p>'}</div></div>`}
 
@@ -5818,6 +5824,11 @@ main.addEventListener('click',async e=>{if(S.tab!=='robos')return;const b=e.targ
   if(a==='robV'){S.robV=b.dataset.v;render()}
   else if(a==='robIcms'){const r=(document.getElementById('robRef')?.value||'').trim();if(!/^(0[1-9]|1[0-2])\/\d{4}$/.test(r)){toast('Referência no formato mm/aaaa');return}S.robRef=r;robPedir('icms',{ref:r})}
   else if(a==='robIcmsRef2')robPedir('icms',{ref:b.dataset.v});
+  else if(a==='robIcmsAnt'){const de=(document.getElementById('robDe')?.value||'').trim(),ate=(document.getElementById('robAte')?.value||'').trim(),cid=document.getElementById('robCliAnt')?.value||'';
+    const ok=r=>/^(0[1-9]|1[0-2])\/\d{4}$/.test(r);if(!ok(de)||!ok(ate)){toast('Use mm/aaaa nos dois campos');return}
+    const n=(+ate.slice(3)*12+ +ate.slice(0,2))-(+de.slice(3)*12+ +de.slice(0,2))+1;if(n<1){toast('"De" precisa ser antes de "até"');return}if(n>24){toast('No máximo 24 meses por vez');return}
+    S.robDe=de;S.robAte=ate;S.robCliAnt=cid;const c=cid?cliById(cid):null;
+    robPedir('icms',{de,ate,...(c?{clienteId:c.id,cli:{ie:dig(c.insc_estadual),nome:c.nome||''}}:{})})}
   else if(a==='robXml')robPedir('xml',{});
   else if(a==='robXmlCli'){if(b.dataset.id)robPedir('xml',{clienteId:b.dataset.id})}
   else if(a==='robCerts')robPedir('certs',{});
