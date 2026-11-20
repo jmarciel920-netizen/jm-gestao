@@ -5635,6 +5635,226 @@ async function exportarCopiaLocal(){
   s.textContent=txt;s.style.background=bg;s.style.color=fg;s.title=store.mode==='db'?'Ligado ao banco de dados: o que você vê é o mesmo em todos os aparelhos':'Sem ligação com o banco de dados'}}
 setStatus(document.getElementById('status').textContent||'');
 (()=>{const st=document.createElement('style');st.textContent='@media (max-width:640px){#selo{font-size:0!important;padding:0!important;width:12px;height:12px;display:inline-block;margin-right:4px}}';document.head.appendChild(st)})();
+
+/* ================= ROBÔS FISCAIS — agente no PC do escritório =================
+   robos/config      -> o que o agente faz (clientes, tributos, horários)   [dono grava]
+   robos/comandos    -> pedidos dos botões (fila)                          [dono pede, agente executa]
+   robos/agente      -> sinal de vida do PC + certificados (sem senhas)    [agente grava]
+   robos/icms_AAAA-MM, robos/xml_resumo, robos/xml_<doc>_<AAAAMM>         [agente grava]
+   robos_pedidos/<uid> -> computador pedindo para ser ligado; robos_acesso/<uid> -> autorizado pelo dono
+   O usuário do robô só lê/grava a coleção robos (regras do banco). */
+if(UNIF&&!EQUIPE){
+COLS.robos='rob';S.rob=S.rob||{};S.robV=S.robV||'painel';
+ICON.robos='<rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4"/><circle cx="12" cy="3.5" r="1"/><circle cx="9" cy="14" r="1.3"/><circle cx="15" cy="14" r="1.3"/><path d="M2 13v3M22 13v3"/>';
+{const i=PAGES.findIndex(p=>p[0]==='obrig');PAGES.splice(i<0?PAGES.length:i+1,0,['robos','Robôs fiscais'])}
+TITLES.robos='Robôs fiscais';VIEWS.robos=()=>vRobos();buildNav();
+
+const ROB_TRIB={'333':'333 – ICMS ST Comércio','349':'349 – Equalização Simples Nacional'};
+const ROB_PAD={clientes:{},tributos:['333','349'],icmsDias:[23,24,25],icmsHora:'12:00',xmlHoras:['07:40','13:40'],xmlInicio:'2026-09-01'};
+const robCfg=()=>({...ROB_PAD,...(S.rob.config||{})});
+const robAg=()=>S.rob.agente||null;
+const dig=s=>String(s||'').replace(/\D/g,'');
+const fmtIE=s=>{const d=dig(s);return d.length===9?`${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}-${d[8]}`:s||''};
+const fmtDoc=s=>{const d=dig(s);return d.length===14?`${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`:d.length===11?`${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`:s||''};
+const dtHora=iso=>{if(!iso)return '';const d=new Date(iso);return isNaN(d)?'':d.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})};
+const haQuanto=iso=>{if(!iso)return '';const m=Math.round((Date.now()-new Date(iso))/60000);return m<1?'agora':m<60?`há ${m} min`:m<1440?`há ${Math.round(m/60)} h`:`há ${Math.round(m/1440)} dia(s)`};
+const robOnline=()=>{const a=robAg();return !!(a&&a.visto&&Date.now()-new Date(a.visto)<3*60000)};
+const refAnt=()=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);return `${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`};
+const refIso=r=>{const [m,a]=r.split('/');return `${a}-${m}`};
+const isoRef=i=>{const [a,m]=i.split('-');return `${m}/${a}`};
+const brNum=v=>{const s=String(v??'').trim();if(!s)return 0;const n=s.includes(',')?parseFloat(s.replace(/\./g,'').replace(',','.')):parseFloat(s);return isFinite(n)?n:0};
+
+function salvarRob(id,obj){S.rob[id]=JSON.parse(JSON.stringify(obj));salvar('robos',id)}
+function robPedir(tipo,params={}){
+  const c=S.rob.comandos||{itens:[]};const itens=(c.itens||[]).filter(x=>x.status==='pendente'||x.status==='executando'||Date.now()-new Date(x.pedido)<7*864e5).slice(-30);
+  if(itens.some(x=>x.tipo===tipo&&x.status==='pendente'&&JSON.stringify(x.params||{})===JSON.stringify(params))){toast('Esse pedido já está na fila');return}
+  itens.push({id:uid('c'),tipo,params,pedido:new Date().toISOString(),status:'pendente'});
+  salvarRob('comandos',{itens});
+  toast(robOnline()?'Pedido enviado ao PC — começa em até 1 minuto':'Pedido guardado — o PC executa assim que estiver ligado');render()}
+
+/* clientes vistos pelo robô: copia nome, CNPJ e I.E. do cadastro para robos/config */
+function robSync(force){
+  if(!LOADED.has('robos')||!LOADED.has('cadastros'))return;
+  const cfgR=robCfg(),cl={...(cfgR.clientes||{})};let mud=false;
+  for(const [id,r] of Object.entries(cl)){const c=cliById(id);if(!c)continue;
+    const n={...r,nome:c.nome||'',cnpj:dig(c.cpf_cnpj),ie:dig(c.insc_estadual)};
+    if(JSON.stringify(n)!==JSON.stringify(r)){cl[id]=n;mud=true}}
+  if(mud||force)salvarRob('config',{...cfgR,clientes:cl});
+}
+function robCli(id,patch){const cfgR=robCfg(),c=cliById(id);if(!c)return;
+  const cur=(cfgR.clientes||{})[id]||{};
+  const n={...cur,...patch,nome:c.nome||'',cnpj:dig(c.cpf_cnpj),ie:dig(c.insc_estadual)};
+  if(!n.icms&&!n.xml&&!n.cert){const cl={...cfgR.clientes};delete cl[id];salvarRob('config',{...cfgR,clientes:cl})}
+  else salvarRob('config',{...cfgR,clientes:{...(cfgR.clientes||{}),[id]:n}})}
+
+/* pedidos de pareamento (computador querendo se ligar) */
+let robPedidos=[],robAcessos=[],_robEsc=false;
+function robEscutar(){if(_robEsc||!store.db)return;_robEsc=true;
+  try{store.db.collection('robos_pedidos').onSnapshot(s=>{robPedidos=s.docs.map(d=>({...d.data(),uid:d.id}));if(S.tab==='robos')render()},()=>{})}catch(e){}
+  try{store.db.collection('robos_acesso').onSnapshot(s=>{robAcessos=s.docs.map(d=>({...d.data(),uid:d.id}));if(S.tab==='robos')render()},()=>{})}catch(e){}}
+
+function robTabs(){return `<div class="bar-tools"><div class="subtabs" role="group" aria-label="Visão">${[['painel','Painel'],['icms','Guias de ICMS'],['xml','XMLs de compras'],['cad','Clientes e horários']].map(([k,n])=>`<button data-act="robV" data-v="${k}" aria-pressed="${S.robV===k}">${n}</button>`).join('')}</div></div>`}
+
+function vRobos(){robEscutar();setTimeout(()=>robSync(false),0);
+  const v=S.robV;
+  return ph('Robôs fiscais','Download de XML de compras e consulta de guias de ICMS, feitos pelo agente no PC do escritório')+robTabs()+
+    (v==='icms'?robVIcms():v==='xml'?robVXml():v==='cad'?robVCad():robVPainel());}
+
+function robStatusPanel(){
+  const a=robAg(),on=robOnline();
+  const pend=robPedidos.filter(p=>!robAcessos.some(x=>x.uid===p.uid));
+  const pares=pend.map(p=>`<li style="flex-wrap:wrap"><div class="grow"><div class="t">Computador <b>${esc(p.maquina||'?')}</b> pedindo para ser ligado ao sistema</div>
+      <div class="m">Confira se o código na tela do PC é <b style="font-size:16px;letter-spacing:2px">${esc(p.codigo||'')}</b> · pedido ${haQuanto(p.pedido)}</div></div>
+      <span style="display:flex;gap:6px"><button class="btn small primary" data-act="robAutorizar" data-uid="${esc(p.uid)}" data-m="${esc(p.maquina||'')}">Autorizar</button><button class="btn small" data-act="robRecusar" data-uid="${esc(p.uid)}">Recusar</button></span></li>`).join('');
+  const lig=robAcessos.map(x=>`<li><div class="grow"><div class="t">${esc(x.maquina||x.uid)}</div><div class="m">autorizado em ${dtHora(x.em)}</div></div><button class="btn small danger" data-act="robRevogar" data-uid="${esc(x.uid)}" data-m="${esc(x.maquina||'')}">Desligar</button></li>`).join('');
+  return `<div class="panel" style="margin-bottom:16px${pend.length?';border-color:color-mix(in srgb,var(--warning) 50%,var(--border))':''}">
+    <h3>Agente do PC <small>${a?`${esc(a.maquina||'')} · versão ${esc(a.versao||'')}`:''}</small></h3>
+    ${a?`<p style="margin:0 0 6px"><span class="chip ${on?'ok':'fora'}" style="margin:0 6px 0 0">${on?'Ligado':'Desligado'}</span>${on?(a.trabalhando?`<b>${esc(a.trabalhando)}…</b>`:'aguardando tarefas'):`último sinal ${haQuanto(a.visto)} (${dtHora(a.visto)})`}</p>
+      <p class="hint" style="margin:0">Próximos: XML ${esc(a.proximo?.xml||'—')} · ICMS ${esc(a.proximo?.icms||'—')}</p>`
+      :`<p class="hint" style="margin:0">Nenhum PC ligado ainda. No computador do escritório, abra <b>"8 - Ligar este PC ao sistema"</b> da pasta dos robôs e autorize o código que aparecer.</p>`}
+    ${pend.length?`<ul class="list" style="margin-top:10px">${pares}</ul>`:''}
+    ${robAcessos.length&&S.robVerPCs?`<ul class="list" style="margin-top:10px">${lig}</ul>`:''}
+    ${robAcessos.length?`<p class="hint" style="margin:8px 0 0"><button class="linkbtn" data-act="robVerPCs" style="color:var(--primary)">${S.robVerPCs?'Esconder computadores ligados':`Computadores ligados (${robAcessos.length})`}</button></p>`:''}
+  </div>`}
+
+function robIcmsDoc(ref){return S.rob['icms_'+refIso(ref)]||null}
+function robRefs(){return Object.keys(S.rob).filter(k=>/^icms_\d{4}-\d{2}$/.test(k)).map(k=>isoRef(k.slice(5))).sort((a,b)=>refIso(b).localeCompare(refIso(a)))}
+
+function robVPainel(){
+  const ref=robRefs()[0]||refAnt(),d=robIcmsDoc(ref),com=(d?.itens||[]).filter(x=>x.situacao==='TEM GUIA');
+  const tot=com.reduce((s,x)=>s+brNum(x.total),0);
+  const ym=new Date().toISOString().slice(0,7),R=S.rob.xml_resumo?.clientes||{};
+  let b=0,ag=0,er=0;for(const c of Object.values(R)){const m=c.meses?.[ym];if(m){b+=m.b||0;ag+=m.a||0}if(c.erro)er++}
+  const certs=(robAg()?.certificados||[]).filter(c=>!c.ignorado),certRuim=certs.filter(c=>!c.ok||(c.validade&&c.validade<todayISO)),certVence=certs.filter(c=>c.ok&&c.validade&&c.validade>=todayISO&&(new Date(c.validade)-Date.now())<30*864e5);
+  const cmds=[...(S.rob.comandos?.itens||[])].sort((x,y)=>String(y.pedido).localeCompare(String(x.pedido))).slice(0,8);
+  const nomeCmd=c=>c.tipo==='icms'?`Consultar guias de ICMS ${esc(c.params?.ref||'')}`:c.tipo==='xml'?(c.params?.clienteId?`Baixar XML – ${esc(cliById(c.params.clienteId)?.nome||'cliente')}`:'Baixar XML de todos'):c.tipo==='certs'?'Atualizar certificados':esc(c.tipo);
+  const chipSt=s=>s==='ok'?'<span class="chip ok">concluído</span>':s==='erro'?'<span class="chip fora">erro</span>':s==='executando'?'<span class="chip info">executando</span>':'<span class="chip man">na fila</span>';
+  return robStatusPanel()+`<div class="kpis">
+    ${stat(`Guias de ICMS ${esc(ref)}`,com.length?String(com.length):'0',d?`${com.length?brl2(tot)+' no total':'nenhum cliente com guia'} · ${d.rodadas?.length||0} consulta(s)`:'ainda não consultado','alert',com.length?'d':'a')}
+    ${stat('XMLs baixados no mês',String(b),ag?`${ag} aguardando a SEFAZ liberar`:'nenhum aguardando','download','p')}
+    ${stat('Certificados',String(certs.length),certRuim.length?`${certRuim.length} vencido(s) ou com senha errada`:certVence.length?`${certVence.length} vence(m) em até 30 dias`:'todos em dia','target',certRuim.length?'d':certVence.length?'w':'a')}
+    ${stat('Clientes com problema no XML',String(er),er?'veja em XMLs de compras':'nenhum','alert',er?'d':'a')}
+  </div>
+  <div class="cols eq"><div class="panel"><h3>Rodar agora</h3>
+    <p class="hint">Os robôs rodam sozinhos nos horários de "Clientes e horários". Use os botões para rodar fora do horário.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <button class="btn primary" data-act="robIcms">Consultar guias de ICMS</button>
+      <label style="display:flex;gap:6px;align-items:center">referência <input type="text" id="robRef" value="${esc(S.robRef||refAnt())}" style="width:90px" inputmode="numeric" aria-label="Referência mm/aaaa"></label></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="robXml">Baixar XMLs de todos</button><button class="btn" data-act="robCerts">Atualizar lista de certificados</button></div>
+    ${!robOnline()?`<p class="hint" style="margin:10px 0 0">O PC está desligado: os pedidos ficam na fila e rodam quando ele ligar.</p>`:''}</div>
+  <div class="panel"><h3>Últimos pedidos</h3>${cmds.length?`<ul class="list">${cmds.map(c=>`<li style="flex-wrap:wrap"><div class="grow"><div class="t">${nomeCmd(c)}${chipSt(c.status)}</div><div class="m">pedido ${dtHora(c.pedido)}${c.fim?' · terminou '+dtHora(c.fim):''}${c.msg?' · '+esc(c.msg):''}</div>
+      ${c.log&&c.log.length&&S.robLog===c.id?`<pre style="white-space:pre-wrap;font-size:11px;max-height:220px;overflow:auto;background:var(--muted-bg);padding:8px;border-radius:8px;margin:6px 0 0">${esc(c.log.join('\n'))}</pre>`:''}</div>
+      ${c.log&&c.log.length?`<button class="linkbtn" data-act="robLog" data-id="${esc(c.id)}" style="color:var(--primary)">${S.robLog===c.id?'esconder':'detalhes'}</button>`:''}</li>`).join('')}</ul>`:'<p class="hint">Nenhum pedido ainda.</p>'}</div></div>`}
+
+function robVIcms(){
+  const refs=robRefs();const ref=S.robIcmsRef&&refs.includes(S.robIcmsRef)?S.robIcmsRef:(refs[0]||refAnt());
+  const d=robIcmsDoc(ref);let itens=[...(d?.itens||[])];
+  if(S.robSoGuia)itens=itens.filter(x=>x.situacao==='TEM GUIA');
+  itens.sort((a,b)=>(a.situacao==='TEM GUIA'?0:1)-(b.situacao==='TEM GUIA'?0:1)||String(a.nome).localeCompare(String(b.nome))||String(a.tributo).localeCompare(String(b.tributo)));
+  const com=(d?.itens||[]).filter(x=>x.situacao==='TEM GUIA'),tot=com.reduce((s,x)=>s+brNum(x.total),0);
+  const chip=x=>x.situacao==='TEM GUIA'?'<span class="chip fora" style="margin:0">TEM GUIA</span>':x.situacao==='sem guia'?'<span class="chip ok" style="margin:0">sem guia</span>':`<span class="chip man" style="margin:0">${esc(x.situacao)}</span>`;
+  return `<div class="bar-tools" style="margin-top:12px"><label>Referência <select data-act="robIcmsRef">${(refs.length?refs:[ref]).map(r=>`<option${r===ref?' selected':''}>${r}</option>`).join('')}</select></label>
+    <button class="btn small${S.robSoGuia?' primary':''}" data-act="robSoGuia" aria-pressed="${!!S.robSoGuia}">Só quem tem guia</button>
+    <button class="btn small" data-act="robIcmsRef2" data-v="${esc(ref)}">Consultar ${esc(ref)} de novo</button></div>
+  ${d?`<div class="sumline"><span><b>${com.length}</b> cliente(s) com guia</span><span>Total: <b class="${tot?'neg':''}">${brl2(tot)}</b></span><span>Última consulta: <b>${dtHora(d.atualizado)}</b></span>${d.encontrou?'<span>Agenda do mês encerrada (guia encontrada)</span>':''}</div>
+    ${itens.length?`<div class="tscroll"><table class="cards"><thead><tr><th class="l">Cliente</th><th class="l">Tributo</th><th class="l">Situação</th><th>Vencimento</th><th>Principal</th><th>Multa + juros</th><th>Total</th></tr></thead><tbody>
+    ${itens.map(x=>`<tr><td><span class="lname">${esc(x.nome||x.razao)}</span><div class="muted" style="font-size:12px">I.E. ${esc(x.ie)}</div></td><td class="l" data-l="Tributo">${esc(ROB_TRIB[x.tributo]||x.tributo)}</td>
+      <td class="l" data-l="Situação">${chip(x)}${x.mensagem&&x.situacao!=='sem guia'?`<div class="muted" style="font-size:12px">${esc(x.mensagem)}</div>`:''}</td><td data-l="Vencimento">${esc(x.vencimento||'—')}</td>
+      <td data-l="Principal">${x.principal?brl2(brNum(x.principal)):'—'}</td><td data-l="Multa + juros">${x.principal?brl2(brNum(x.multa)+brNum(x.juros)+brNum(x.atualizacao)):'—'}</td><td data-l="Total"${x.total?' class="neg"':''}>${x.total?`<b>${brl2(brNum(x.total))}</b>`:'—'}</td></tr>`).join('')}</tbody></table></div>`
+    :`<div class="empty"><h2 style="margin:0">Nenhum cliente com guia</h2><p>Nenhuma guia de ICMS calculada pela SEFAZ para ${esc(ref)}.</p></div>`}
+    <details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Histórico de consultas (${d.rodadas?.length||0})</summary><ul class="list">${[...(d.rodadas||[])].reverse().map(r=>`<li><div class="grow"><div class="t">${dtHora(r.em)} · ${r.origem==='agenda'?'agendada':'pelo botão'}</div><div class="m">${r.guias} cliente(s) com guia</div></div></li>`).join('')}</ul></details>`
+  :`<div class="empty"><h2 style="margin:0">${esc(ref)} ainda não foi consultada</h2><p>A consulta automática roda nos dias ${robCfg().icmsDias.join(', ')} às ${esc(robCfg().icmsHora)}. Para consultar agora, use o botão acima.</p></div>`}`}
+
+function robVXml(){
+  const R=S.rob.xml_resumo?.clientes||{};
+  const meses=new Set();for(const c of Object.values(R))for(const m of Object.keys(c.meses||{}))meses.add(m);
+  const lm=[...meses].sort().reverse();const ym=S.robYm&&lm.includes(S.robYm)?S.robYm:(lm[0]||new Date().toISOString().slice(0,7));
+  const lin=Object.entries(R).map(([doc,c])=>({doc,...c,m:c.meses?.[ym]||null})).sort((a,b)=>(b.erro?1:0)-(a.erro?1:0)||String(a.nome).localeCompare(String(b.nome)));
+  const T=lin.reduce((s,x)=>{if(x.m){s.b+=x.m.b||0;s.a+=x.m.a||0;s.c+=x.m.c||0;s.v+=x.m.v||0}return s},{b:0,a:0,c:0,v:0});
+  const ab=S.robAberto;const det=ab?S.rob[`xml_${ab}_${ym.replace('-','')}`]:null;
+  const sitChip=s=>s==='baixado'?'<span class="chip ok" style="margin:0">XML baixado</span>':s==='cancelada'?'<span class="chip man" style="margin:0">cancelada</span>':s==='aguardando'||s==='resumo'?'<span class="chip info" style="margin:0">aguardando SEFAZ</span>':`<span class="chip fora" style="margin:0">${esc(s)}</span>`;
+  const MES=m=>{const [a,mm]=m.split('-');return `${MESES_L[+mm-1]}/${a}`};
+  return `<div class="bar-tools" style="margin-top:12px"><label>Mês <select data-act="robYm">${(lm.length?lm:[ym]).map(m=>`<option value="${m}"${m===ym?' selected':''}>${MES(m)}</option>`).join('')}</select></label>
+    <button class="btn small" data-act="robXml">Baixar XMLs agora</button></div>
+  ${lin.length?`<div class="sumline"><span><b>${T.b}</b> XML baixados</span><span><b>${T.a}</b> aguardando</span><span><b>${T.c}</b> canceladas</span><span>Compras: <b>${brl2(T.v)}</b></span>${S.rob.xml_resumo?.atualizado?`<span>Atualizado ${dtHora(S.rob.xml_resumo.atualizado)}</span>`:''}</div>
+  <div class="tscroll"><table class="cards"><thead><tr><th class="l">Cliente</th><th>XML baixados</th><th>Aguardando</th><th>Canceladas</th><th>Valor das compras</th><th class="l">Última busca</th></tr></thead><tbody>
+  ${lin.map(x=>`<tr class="row" data-act="robAbrir" data-doc="${esc(x.doc)}" tabindex="0"><td><span class="lname">${esc(x.nome||x.doc)}</span><div class="muted" style="font-size:12px">${esc(fmtDoc(/^\d{11,14}$/.test(x.doc)?x.doc:(cliById(x.clienteId)?.cpf_cnpj||"")))}</div>${x.erro?`<div style="font-size:12px;color:var(--destructive)">${esc(x.erro)}</div>`:''}</td>
+    <td data-l="XML baixados">${x.m?x.m.b:'—'}</td><td data-l="Aguardando">${x.m?.a?`<span class="chip info" style="margin:0">${x.m.a}</span>`:'—'}</td><td data-l="Canceladas">${x.m?.c||'—'}</td><td data-l="Valor">${x.m?brl2(x.m.v):'—'}</td><td class="l muted" data-l="Última busca">${x.ult?dtHora(x.ult):'—'}</td></tr>
+    ${ab===x.doc?`<tr><td colspan="6" style="background:var(--muted-bg)">${det&&det.notas?.length?`<table class="itm" style="width:100%"><thead><tr><th class="l">Nº</th><th class="l">Emissão</th><th class="l">Fornecedor</th><th>Valor</th><th class="l">Situação</th></tr></thead><tbody>${det.notas.map(n=>`<tr><td class="l">${esc(n.num)}</td><td class="l">${esc(n.dt)}</td><td class="l">${esc(n.emit)}</td><td>${n.valor?brl2(brNum(n.valor)):'—'}</td><td class="l">${sitChip(n.sit)}</td></tr>`).join('')}</tbody></table>`:'<p class="hint" style="margin:8px">Nenhuma nota deste cliente no mês.</p>'}
+      <p style="margin:8px 0 0"><button class="btn small" data-act="robXmlCli" data-id="${esc(x.clienteId||'')}" ${x.clienteId?'':'disabled'}>Baixar só deste cliente agora</button></p></td></tr>`:''}`).join('')}</tbody></table></div>`
+  :`<div class="empty"><h2 style="margin:0">Nenhum XML ainda</h2><p>Assim que o agente rodar, as notas de compra de cada cliente aparecem aqui.</p></div>`}`}
+
+function robVCad(){
+  const C=robCfg(),cl=C.clientes||{},a=robAg(),certs=(a?.certificados||[]).filter(c=>c.ok);
+  const porDoc=Object.fromEntries(certs.map(c=>[c.doc,c.arquivo]));
+  const ies=Object.fromEntries((a?.iesLocais||[]).map(x=>[dig(x.ie),x.nome]));
+  const cs=clientes().filter(c=>c.status==='Ativo'||cl[c.id]).sort((x,y)=>String(x.nome).localeCompare(String(y.nome)));
+  const semIE=cs.filter(c=>!dig(c.insc_estadual));
+  const nIcms=Object.values(cl).filter(x=>x.icms).length,nXml=Object.values(cl).filter(x=>x.xml).length;
+  return `<div class="cols eq" style="margin-top:12px"><div class="panel"><h3>Guias de ICMS</h3>
+    <p class="hint">Consulta "Calculado pelo sistema" no e-Fazenda MS. Roda nos dias abaixo, a partir da hora; se encontrar guia, não roda nos dias seguintes do mês.</p>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px">${Object.entries(ROB_TRIB).map(([k,n])=>`<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-rcfg="trib" value="${k}"${C.tributos.includes(k)?' checked':''}> ${esc(n)}</label>`).join('')}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><label class="fl">Dias do mês<input type="text" data-rcfg="icmsDias" value="${esc(C.icmsDias.join(', '))}" style="width:120px"></label>
+    <label class="fl">Hora<input type="time" data-rcfg="icmsHora" value="${esc(C.icmsHora)}"></label></div></div>
+  <div class="panel"><h3>XML de compras</h3><p class="hint">Busca na SEFAZ tudo o que foi emitido contra o CNPJ do cliente, com o certificado A1 dele, e registra a Ciência da Operação.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><label class="fl">Horários (separe por vírgula)<input type="text" data-rcfg="xmlHoras" value="${esc(C.xmlHoras.join(', '))}" style="width:160px"></label>
+    <label class="fl">Baixar notas a partir de<input type="date" data-rcfg="xmlInicio" value="${esc(C.xmlInicio)}"></label></div></div></div>
+  <div class="panel" style="margin-top:16px"><h3>Clientes <small>${nIcms} no ICMS · ${nXml} no XML</small></h3>
+    ${semIE.length&&Object.keys(ies).length?`<p class="hint">${semIE.length} cliente(s) ativo(s) sem I.E. no cadastro. A I.E. é editada aqui mesmo e fica gravada na ficha do cliente.</p>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn small" data-act="robTodos" data-k="icms">Marcar ICMS para todos com I.E.</button><button class="btn small" data-act="robTodos" data-k="xml">Marcar XML para todos com certificado</button></div>
+    <div class="tscroll"><table class="cards"><thead><tr><th class="l">Cliente</th><th class="l">Inscrição estadual</th><th>ICMS</th><th>XML</th><th class="l">Certificado A1 (no PC)</th></tr></thead><tbody>
+    ${cs.map(c=>{const r=cl[c.id]||{},auto=porDoc[dig(c.cpf_cnpj)];const cert=r.cert||'';
+      return `<tr><td><span class="lname">${esc(c.nome)}</span><div class="muted" style="font-size:12px">${esc(c.cpf_cnpj||'sem CNPJ')} · ${esc(c.regime||'')}</div></td>
+      <td class="l" data-l="I.E."><input type="text" data-rie="${esc(c.id)}" value="${esc(fmtIE(c.insc_estadual))}" placeholder="—" style="width:120px">${dig(c.insc_estadual)&&ies[dig(c.insc_estadual)]!==undefined?'':''}</td>
+      <td data-l="ICMS"><input type="checkbox" data-rcli="icms" data-id="${esc(c.id)}"${r.icms?' checked':''}${dig(c.insc_estadual)?'':' disabled title="Informe a I.E."'}></td>
+      <td data-l="XML"><input type="checkbox" data-rcli="xml" data-id="${esc(c.id)}"${r.xml?' checked':''}></td>
+      <td class="l" data-l="Certificado"><select data-rcert="${esc(c.id)}" style="max-width:260px"><option value="">${auto?'Automático: '+esc(auto):'— nenhum encontrado —'}</option>${certs.map(x=>`<option value="${esc(x.arquivo)}"${x.arquivo===cert?' selected':''}>${esc(x.arquivo)}${x.validade?' · vence '+dBR(x.validade):''}</option>`).join('')}</select>
+        ${r.xml&&!cert&&!auto?'<div style="font-size:12px;color:var(--destructive)">sem certificado: o XML não será baixado</div>':''}</td></tr>`}).join('')}
+    </tbody></table></div>
+    ${a?.certificados?.some(c=>!c.ok)?`<p class="hint" style="margin-top:10px">Certificados que o PC não conseguiu abrir: ${a.certificados.filter(c=>!c.ok).map(c=>esc(c.arquivo)).join(', ')}. Informe a senha no programa "3 - Baixar de TODOS os clientes" do PC.</p>`:''}
+  </div>`}
+
+main.addEventListener('click',async e=>{if(S.tab!=='robos')return;const b=e.target.closest('[data-act]');if(!b)return;const a=b.dataset.act;
+  if(a==='robV'){S.robV=b.dataset.v;render()}
+  else if(a==='robIcms'){const r=(document.getElementById('robRef')?.value||'').trim();if(!/^(0[1-9]|1[0-2])\/\d{4}$/.test(r)){toast('Referência no formato mm/aaaa');return}S.robRef=r;robPedir('icms',{ref:r})}
+  else if(a==='robIcmsRef2')robPedir('icms',{ref:b.dataset.v});
+  else if(a==='robXml')robPedir('xml',{});
+  else if(a==='robXmlCli'){if(b.dataset.id)robPedir('xml',{clienteId:b.dataset.id})}
+  else if(a==='robCerts')robPedir('certs',{});
+  else if(a==='robSoGuia'){S.robSoGuia=!S.robSoGuia;render()}
+  else if(a==='robLog'){S.robLog=S.robLog===b.dataset.id?'':b.dataset.id;render()}
+  else if(a==='robVerPCs'){S.robVerPCs=!S.robVerPCs;render()}
+  else if(a==='robAbrir'){if(e.target.closest('button'))return;S.robAbrir=S.robAberto===b.dataset.doc?'':b.dataset.doc;S.robAberto=S.robAbrir;render()}
+  else if(a==='robAutorizar'){if(!confirm(`Autorizar o computador "${b.dataset.m}" a rodar os robôs? Ele só vê a área dos robôs, sem valores e sem honorários.`))return;
+    try{await store.db.doc('robos_acesso/'+b.dataset.uid).set({ok:true,maquina:b.dataset.m,em:new Date().toISOString()});toast('Computador autorizado')}catch(err){toast('Não consegui autorizar: '+(err.message||err))}}
+  else if(a==='robRecusar'||a==='robRevogar'){if(a==='robRevogar'&&!confirm(`Desligar o computador "${b.dataset.m}"? Os robôs dele param de funcionar até nova autorização.`))return;
+    try{if(a==='robRevogar')await store.db.doc('robos_acesso/'+b.dataset.uid).delete();await store.db.doc('robos_pedidos/'+b.dataset.uid).delete();toast(a==='robRevogar'?'Computador desligado':'Pedido recusado')}catch(err){toast('Falhou: '+(err.message||err))}}
+  else if(a==='robTodos'){const k=b.dataset.k,C=robCfg(),cl={...C.clientes},certs=(robAg()?.certificados||[]).filter(c=>c.ok),docs=new Set(certs.map(c=>c.doc));let n=0;
+    for(const c of clientes().filter(c=>c.status==='Ativo')){const ok=k==='icms'?!!dig(c.insc_estadual):docs.has(dig(c.cpf_cnpj))||!!(cl[c.id]?.cert);if(!ok||cl[c.id]?.[k])continue;
+      cl[c.id]={...(cl[c.id]||{}),[k]:true,nome:c.nome||'',cnpj:dig(c.cpf_cnpj),ie:dig(c.insc_estadual)};n++}
+    salvarRob('config',{...C,clientes:cl});toast(`${n} cliente(s) marcado(s)`);render()}
+});
+main.addEventListener('change',e=>{if(S.tab!=='robos')return;const t=e.target;
+  if(t.dataset.act==='robIcmsRef'){S.robIcmsRef=t.value;render();return}
+  if(t.dataset.act==='robYm'){S.robYm=t.value;S.robAberto='';render();return}
+  if(t.dataset.rcli){robCli(t.dataset.id,{[t.dataset.rcli]:t.checked});render();return}
+  if(t.dataset.rcert){robCli(t.dataset.rcert,{cert:t.value||undefined});render();return}
+  if(t.dataset.rie){const c=cliById(t.dataset.rie);if(!c)return;const d=dig(t.value);if(d&&d.length!==9){toast('A inscrição estadual de MS tem 9 dígitos');t.value=fmtIE(c.insc_estadual);return}
+    c.insc_estadual=d?fmtIE(d):'';salvar('cadastros','clientes');setTimeout(()=>robSync(false),50);toast('I.E. gravada na ficha do cliente');render();return}
+  if(t.dataset.rcfg){const C=robCfg();const k=t.dataset.rcfg;
+    if(k==='trib'){const s=new Set(C.tributos);t.checked?s.add(t.value):s.delete(t.value);if(!s.size){toast('Escolha ao menos um tributo');t.checked=true;return}salvarRob('config',{...C,tributos:[...s].sort()})}
+    else if(k==='icmsDias'){const ds=[...new Set(t.value.split(/[^\d]+/).map(Number).filter(n=>n>=1&&n<=28))].sort((a,b)=>a-b);if(!ds.length){toast('Informe dias entre 1 e 28');return}salvarRob('config',{...C,icmsDias:ds})}
+    else if(k==='xmlHoras'){const hs=[...new Set((t.value.match(/\b([01]?\d|2[0-3]):[0-5]\d\b/g)||[]).map(h=>h.padStart(5,'0')))].sort();if(!hs.length){toast('Informe horários como 07:40, 13:40');return}salvarRob('config',{...C,xmlHoras:hs})}
+    else salvarRob('config',{...C,[k]:t.value});
+    toast('Salvo — o PC usa na próxima rodada');render()}
+});
+/* quando o cadastro muda, atualiza nome/CNPJ/I.E. que o robô usa */
+{const _sv2=salvar;salvar=function(col,id){const r=_sv2.apply(this,arguments);if(col==='cadastros'&&LOADED.has('robos'))setTimeout(()=>robSync(false),400);return r}}
+/* aviso no menu quando há guia de ICMS no mês ou PC pedindo autorização */
+{const _r2=render;render=function(){const r=_r2.apply(this,arguments);try{const el=document.querySelector('.nav[data-tab="robos"] span');if(el){const d=robIcmsDoc(robRefs()[0]||refAnt());const n=(d?.itens||[]).filter(x=>x.situacao==='TEM GUIA').length;const p=robPedidos.filter(x=>!robAcessos.some(y=>y.uid===x.uid)).length;
+  el.innerHTML='Robôs fiscais'+(n?` <span class="chip fora" style="margin-left:4px;padding:0 6px" title="clientes com guia de ICMS">${n}</span>`:'')+(p?` <span class="chip saz" style="margin-left:4px;padding:0 6px" title="computador aguardando autorização">!</span>`:'')}}catch(err){}return r}}
+setTimeout(()=>{try{robEscutar()}catch(e){}},3000);
+}
 </script><script type="text/plain" id="jmloader">(async()=>{
   /* sistema único: o dono vê tudo; quem foi convidado entra no modo equipe (sem valores) */
   const main=document.querySelector('main');
