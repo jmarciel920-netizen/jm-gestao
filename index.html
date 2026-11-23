@@ -488,7 +488,7 @@ function salvar(col,id){
   },400);
 }
 async function initStore(){
-  loadLocal();render();
+  loadLocal();try{render()}catch(e){/* a tela inicial é desenhada de novo quando os dados chegam */}
   let db=null;
   try{db=window.JMC&&window.JMC.use?await window.JMC.use('db'):null}catch(e){db=null}
   if(!db){store.mode='local';setStatus('Salvando neste navegador');render();
