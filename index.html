@@ -466,7 +466,7 @@ function salvar(col,id){
   const key=col+'/'+id;
   if(store.mode!=='db'){
     /* dentro do claude.ai sem banco: não grava nada (a cópia local é antiga e sobrescreveria dados bons) */
-    if(store.mode==='local'&&window.claude&&window.claude.use){semBanco();toast('Sem ligação com o banco: esta alteração NÃO foi salva. Recarregue a página.');return}
+    if(store.mode==='local'&&window.JMC&&window.JMC.use){semBanco();toast('Sem ligação com o banco: esta alteração NÃO foi salva. Recarregue a página.');return}
     saveLocal();return}
   clearTimeout(timers[key]);
   timers[key]=setTimeout(()=>{
@@ -490,9 +490,9 @@ function salvar(col,id){
 async function initStore(){
   loadLocal();render();
   let db=null;
-  try{db=window.claude&&window.claude.use?await window.claude.use('db'):null}catch(e){db=null}
+  try{db=window.JMC&&window.JMC.use?await window.JMC.use('db'):null}catch(e){db=null}
   if(!db){store.mode='local';setStatus('Salvando neste navegador');render();
-    if(window.claude&&window.claude.use)semBanco();return}
+    if(window.JMC&&window.JMC.use)semBanco();return}
   store.db=db;store.mode='db';setStatus('Sincronizado');
   const first={};
   for(const col of Object.keys(COLS)){
@@ -2045,7 +2045,7 @@ main.addEventListener('change',e=>{
 
 /* ================= EXPORTAÇÃO, BACKUP E CONFIGURAÇÕES ================= */
 async function baixar(filename,data){
-  let d=null;try{d=window.claude&&window.claude.use?await window.claude.use('downloads'):null}catch(e){d=null}
+  let d=null;try{d=window.JMC&&window.JMC.use?await window.JMC.use('downloads'):null}catch(e){d=null}
   if(!d){toast('Download indisponível nesta visualização. Abra o sistema pelo link do artifact.');return false}
   try{await d.save({filename,data});return true}
   catch(e){if(e&&e.code==='declined')return false;toast('Não foi possível gerar o arquivo ('+(e&&e.code||'erro')+')');return false}
@@ -3455,7 +3455,7 @@ main.addEventListener('change',e=>{
 });
 async function initUsuario(){
   if(!EQUIPE&&!UNIF)return;
-  try{const u=window.claude&&window.claude.use?await window.claude.use('user'):null;
+  try{const u=window.JMC&&window.JMC.use?await window.JMC.use('user'):null;
     if(u){EU.api=u;const me=await Promise.race([u.me(),new Promise((_,r)=>setTimeout(()=>r(new Error('tempo esgotado')),8000))]);EU.owner=!!me.isOwner||!EQUIPE;EU.id=me.id;EU.nome=me.name||''}}catch(e){console.error('usuário',e)}
   EU.ready=true;
   if(EU.id&&store.mode==='db'){
@@ -3886,7 +3886,7 @@ function btnSync(){
 }
 async function sincronizarAgora(){
   if(S.syncIni&&Date.now()-S.syncIni<180000){toast('A sincronização já está rodando. Aguarde um pouco.');return}
-  let mcp=null;try{mcp=window.claude&&window.claude.use?await window.claude.use('mcp'):null}catch(e){mcp=null}
+  let mcp=null;try{mcp=window.JMC&&window.JMC.use?await window.JMC.use('mcp'):null}catch(e){mcp=null}
   if(!mcp){toast('Não deu para sincronizar daqui. Abra o JM Gestão pelo claude.ai e tente de novo.');return}
   S.syncIni=Date.now();render();
   try{
@@ -5561,7 +5561,7 @@ if(UNIF&&!EQUIPE){
     if(b.dataset.act==='copiaAgora'){b.disabled=true;toast('Fazendo a cópia…');try{await snapshotDB('manual-'+new Date().toISOString().slice(0,16).replace(/[:T]/g,'-'));toast('Cópia feita')}catch(er){toast('Não foi possível fazer a cópia ('+(er.code||er.message)+')')}carregarCopias();return}
     if(b.dataset.act==='copiaRest'){const id=b.dataset.id;if(!confirm('Restaurar esta cópia? Os dados atuais serão substituídos; antes disso o sistema guarda uma cópia do estado atual.'))return;toast('Restaurando…');try{await restaurarCopia(id)}catch(er){toast('Falha ao restaurar ('+(er.code||er.message)+')')}carregarCopias();return}
     if(b.dataset.act==='driveAgora'&&window.JM_DRIVE_BACKUP){window.JM_DRIVE_BACKUP();return}
-    if(b.dataset.act==='driveAgora'){let mcp=null;try{mcp=window.claude&&window.claude.use?await window.claude.use('mcp'):null}catch(er){}
+    if(b.dataset.act==='driveAgora'){let mcp=null;try{mcp=window.JMC&&window.JMC.use?await window.JMC.use('mcp'):null}catch(er){}
       if(!mcp){toast('Não deu para acionar daqui. Abra o JM Gestão pelo claude.ai.');return}
       try{await mcp.callTool('Claude Code Remote','fire_trigger',{trigger_id:BK_TRIG});toast('Backup no Drive iniciado. Em alguns minutos os arquivos aparecem na pasta "JM Gestão – Backups".')}catch(er){toast('Não foi possível iniciar o backup no Drive ('+((er&&er.code)||'erro')+')')}}
   });
@@ -5621,7 +5621,7 @@ async function exportarCopiaLocal(){
   for(const [t,v] of Object.entries(d))if(inv[t])dados[inv[t]]=v;
   const txt=JSON.stringify({sistema:'JM Gestão',versao:2,copiaLocal:true,aparelho:navigator.userAgent,geradoEm:new Date().toISOString(),dados,pendentes:ob});
   const nome=`JM-Gestao-copia-deste-aparelho-${carimbo()}.json`;
-  let dl=null;try{dl=window.claude&&window.claude.use?await window.claude.use('downloads'):null}catch(e){}
+  let dl=null;try{dl=window.JMC&&window.JMC.use?await window.JMC.use('downloads'):null}catch(e){}
   if(dl){try{await dl.save({filename:nome,data:txt});toast('Arquivo gerado. Envie ao Claude para recuperar as alterações.');return}catch(e){if(e&&e.code==='declined')return}}
   try{const u=URL.createObjectURL(new Blob([txt],{type:'application/json'}));const a=document.createElement('a');a.href=u;a.download=nome;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);toast('Se o download não começar, use o botão Copiar que aparece a seguir.')}catch(e){}
   setTimeout(()=>{dlg.innerHTML=`<div class="dhead"><h3>Cópia deste aparelho</h3><button class="x" data-close aria-label="Fechar">×</button></div><div class="dbody"><p class="hint">Se o arquivo não baixou: clique em Copiar, cole num bloco de notas, salve como .json e envie ao Claude.</p><textarea readonly style="width:100%;height:220px;font-size:11px">${esc(txt.slice(0,2000000))}</textarea></div><div class="dfoot"><span></span><span style="display:flex;gap:8px"><button class="btn" data-close>Fechar</button><button class="btn primary" data-cp>Copiar</button></span></div>`;
@@ -5632,7 +5632,7 @@ async function exportarCopiaLocal(){
 {const av=document.querySelector('.avatar');if(av&&!document.getElementById('selo')){const s=document.createElement('span');s.id='selo';s.style.cssText='font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;white-space:nowrap;margin-right:6px';av.parentNode.insertBefore(s,av)}}
 {const _ss=setStatus;setStatus=function(t){_ss(t);const s=document.getElementById('selo');if(!s)return;
   const ok=store.mode==='db'&&!/interrompida|Falha/.test(t),pend=/Salvando/.test(t);
-  const [txt,bg,fg]=store.mode!=='db'?(window.claude&&window.claude.use?['Sem conexão','#b91c1c','#fff']:['Só neste navegador','#6b7280','#fff']):!ok?['Não sincronizado','#b91c1c','#fff']:pend?['Salvando…','#d97706','#fff']:['Sincronizado','#15803d','#fff'];
+  const [txt,bg,fg]=store.mode!=='db'?(window.JMC&&window.JMC.use?['Sem conexão','#b91c1c','#fff']:['Só neste navegador','#6b7280','#fff']):!ok?['Não sincronizado','#b91c1c','#fff']:pend?['Salvando…','#d97706','#fff']:['Sincronizado','#15803d','#fff'];
   s.textContent=txt;s.style.background=bg;s.style.color=fg;s.title=store.mode==='db'?'Ligado ao banco de dados: o que você vê é o mesmo em todos os aparelhos':'Sem ligação com o banco de dados'}}
 setStatus(document.getElementById('status').textContent||'');
 (()=>{const st=document.createElement('style');st.textContent='@media (max-width:640px){#selo{font-size:0!important;padding:0!important;width:12px;height:12px;display:inline-block;margin-right:4px}}';document.head.appendChild(st)})();
@@ -5936,13 +5936,13 @@ setTimeout(()=>{try{robEscutar()}catch(e){}},3000);
   window.addEventListener('error',e=>{if(!window.JM_APP_OK)msg('Não foi possível abrir o sistema: '+String(e.message||'erro').replace(/</g,'&lt;')+'. Recarregue a página; se continuar, avise o Claude com esta mensagem.')});
   const ate=(p,ms)=>Promise.race([Promise.resolve(p).catch(()=>'t'),new Promise(r=>setTimeout(()=>r('t'),ms))]);
   let eq=!!window.JM_FORCE_EQ;
-  if(!eq&&window.claude&&window.claude.use){
+  if(!eq&&window.JMC&&window.JMC.use){
     let dono=null;
-    try{const u=await ate(window.claude.use('user'),6000);
+    try{const u=await ate(window.JMC.use('user'),6000);
       if(u&&u!=='t'&&typeof u.isOwner==='function'){const o=await ate(u.isOwner(),5000);if(o===true)dono=true;else if(o===false)dono=false}}catch(e){}
     if(dono!==true){
       /* confirmação pelo banco: só o dono consegue ler a parte financeira */
-      try{const db=await ate(window.claude.use('db'),6000);if(db&&db!=='t'){const r=await ate(db.doc('financeiro/config').get(),6000);if(r&&r!=='t'&&r.exists)dono=true}}catch(e){}
+      try{const db=await ate(window.JMC.use('db'),6000);if(db&&db!=='t'){const r=await ate(db.doc('financeiro/config').get(),6000);if(r&&r!=='t'&&r.exists)dono=true}}catch(e){}
     }
     eq=dono===false;
   }
@@ -6055,7 +6055,7 @@ async function iniciar(u){
   };
   const downloads={async save({filename,data}){const b=data instanceof Blob?data:new Blob([data]);const url=URL.createObjectURL(b);const a=document.createElement('a');a.href=url;a.download=filename||'arquivo';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);return{ok:true}}};
   window.JM_FIREBASE={email,dono,sair:window.JM_SAIR};
-  window.claude={use:async n=>n==='db'?db:n==='user'?user:n==='downloads'?downloads:null};
+  window.JMC={use:async n=>n==='db'?db:n==='user'?user:n==='downloads'?downloads:null};
   fechaTela();
   const s=document.createElement('script');s.textContent=document.getElementById('jmloader').textContent;document.body.appendChild(s);
   if(dono)prepararDrive();
