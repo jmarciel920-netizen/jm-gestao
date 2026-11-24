@@ -1993,10 +1993,16 @@ function projMesAno(P,ano){
   const cli=[];
   for(const c of cliComHist()){if(ehPropria(c))continue;
     const v=yms.map((ym,i)=>{if(!ativoEm(c,ym))return 0;const e=cliEm(c,ym);return r2((e.honorario||0)*(i===11&&e.treze?2:1))});
-    if(v.some(x=>x))cli.push({nome:c.nome,v})}
+    if(v.some(x=>x))cli.push({k:'c:'+c.id,nome:c.nome,v})}
   cli.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
-  const mk=tipo=>recorrentesPorGrupo(tipo).map(g=>({nome:g.nome+(g.grupo?' · '+g.grupo:''),v:yms.map(ym=>valorRecMes(g,ym))})).filter(x=>x.v.some(y=>y)).sort((a,b)=>b.v.reduce((s,y)=>s+y,0)-a.v.reduce((s,y)=>s+y,0));
+  const mk=tipo=>recorrentesPorGrupo(tipo).map(g=>({k:g.k,nome:g.nome+(g.grupo?' · '+g.grupo:''),v:yms.map(ym=>valorRecMes(g,ym))})).filter(x=>x.v.some(y=>y)).sort((a,b)=>b.v.reduce((s,y)=>s+y,0)-a.v.reduce((s,y)=>s+y,0));
   const outR=mk('Receita'),desp=mk('Despesa');
+  /* ajustes do usuário (só na simulação): linhas novas, linhas retiradas e valores trocados mês a mês */
+  for(const x of (P.extras||[])){const v=yms.map(ym=>(ym>=x.de&&(!x.ate||ym<=x.ate))?(+x.valor||0):0);if(!v.some(y=>y))continue;
+    (x.tipo==='Receita'?outR:desp).unshift({k:'x:'+x.id,nome:x.nome+' (simulado)',v,extra:x.id})}
+  const ov=(P.ov||{})[ano]||{},ex=new Set(P.excl||[]);
+  for(const L of [cli,outR,desp])for(const l of L){l.orig=l.v.slice();l.fora=ex.has(l.k);const o=ov[l.k]||{};l.ed={};
+    l.v=l.v.map((y,i)=>{if(l.fora)return 0;if(o[i]!=null){l.ed[i]=1;return +o[i]}return y})}
   const soma=L=>yms.map((_,i)=>r2(L.reduce((s,x)=>s+x.v[i],0)));
   const hon=soma(cli),oR=soma(outR),rec=hon.map((v,i)=>r2(v+oR[i])),des=soma(desp);
   const recA=rec.map((v,i)=>r2(v*fator(+P.rRec||0,i))),desA=des.map((v,i)=>r2(v*fator(+P.rDesp||0,i)));
@@ -2008,19 +2014,20 @@ function vSimMes(P){
   const R=P.anosSel.slice().sort().map(a=>projMesAno(P,a));
   const S_=v=>v.reduce((a,b)=>a+b,0);
   const linha=(nome,v,cls='',st='')=>`<tr${st?` style="${st}"`:''}><td class="l${cls?' '+cls:''}">${nome}</td>${v.map(x=>`<td class="${x<0?'neg':''}">${x?num(x):'<span class="muted">–</span>'}</td>`).join('')}<td style="font-weight:600" class="${S_(v)<0?'neg':''}">${num(S_(v))}</td></tr>`;
+  const linhaEd=(l,ano)=>`<tr style="font-size:12px${l.fora?';opacity:.55':''}"><td class="l"><span style="display:flex;gap:6px;align-items:center"><button class="icon" data-act="simExcl" data-k="${esc(l.k)}" title="${l.fora?'Voltar com esta linha':'Tirar esta linha da simulação'}" aria-label="${l.fora?'Voltar com a linha':'Tirar a linha'}">${l.fora?'↺':'×'}</button>${l.extra?`<button class="icon" data-act="simExtraDel" data-id="${esc(l.extra)}" title="Apagar esta linha simulada" aria-label="Apagar linha simulada">🗑</button>`:''}<span class="muted" style="${l.fora?'text-decoration:line-through':''}">${esc(l.nome)}</span></span></td>${l.v.map((x,i)=>`<td style="padding:2px"><input class="simcel" inputmode="decimal" data-smc="${esc(l.k)}|${ano}|${i}" value="${x?numIn(x):''}" ${l.fora?'disabled':''} title="${l.ed[i]?'Alterado por você (original: '+num(l.orig[i])+'). Apague para voltar ao original.':'Digite para mudar o valor deste mês'}" style="width:76px;text-align:right;padding:3px 4px;border:1px solid ${l.ed[i]?'var(--warning,#d97706)':'var(--border,#e5e7eb)'};border-radius:6px;background:transparent;color:inherit;font:inherit"></td>`).join('')}<td style="font-weight:600">${num(S_(l.v))}</td></tr>`;
   const dif=(a,b)=>a.map((x,i)=>r2(x-b[i]));
   const tab=r=>{const rr=+P.rRec||0,rd=+P.rDesp||0;
     return `<h2 class="sec">${r.ano}</h2><div class="tscroll"><table class="simmes"><thead><tr><th class="l">Linha</th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead><tbody>
     <tr><td class="l" colspan="14" style="font-weight:700;background:var(--soft,transparent)">Receitas</td></tr>
     ${linha('Honorários (cadastro dos clientes)',r.hon)}
-    ${P.det?r.cli.map(c=>linha('<span class="muted">· '+esc(c.nome)+'</span>',c.v,'','font-size:12px')).join(''):''}
+    ${P.det?r.cli.map(l=>linhaEd(l,r.ano)).join(''):''}
     ${linha('Outras receitas recorrentes',r.oR)}
-    ${P.det?r.outR.map(c=>linha('<span class="muted">· '+esc(c.nome)+'</span>',c.v,'','font-size:12px')).join(''):''}
+    ${P.det?r.outR.map(l=>linhaEd(l,r.ano)).join(''):''}
     ${linha('<b>Receitas, valores atuais</b>',r.rec)}
     ${rr?linha(`<b>Receitas com +${String(rr).replace('.',',')}%</b>`,r.recA)+linha('Quanto representa o aumento',dif(r.recA,r.rec),'pos','color:var(--success,#16a34a)'):''}
     <tr><td class="l" colspan="14" style="font-weight:700">Despesas</td></tr>
     ${linha('<b>Despesas recorrentes, valores atuais</b>',r.des)}
-    ${P.det?r.desp.map(c=>linha('<span class="muted">· '+esc(c.nome)+'</span>',c.v,'','font-size:12px')).join(''):''}
+    ${P.det?r.desp.map(l=>linhaEd(l,r.ano)).join(''):''}
     ${rd?linha(`<b>Despesas com +${String(rd).replace('.',',')}%</b>`,r.desA)+linha('Quanto representa o aumento',dif(r.desA,r.des),'neg'):''}
     <tr><td class="l" colspan="14" style="font-weight:700">Resultado</td></tr>
     ${linha('Resultado com valores atuais',r.res)}
@@ -2045,6 +2052,19 @@ function vSimMes(P){
     ${stat('Efeito no resultado',brlK(efeito),'receitas menos despesas','percent','p',efeito<0?'neg':'')}
     ${stat('Resultado com os aumentos',brlK(tot('resA')),`antes: ${brlK(tot('res'))}`,'target','i',tot('resA')<0?'neg':'')}
   </section>
+  <div class="panel"><h3>Ajustar receitas e despesas da simulação</h3>
+    <p class="hint" style="margin:0 0 10px">Os ajustes valem só para esta simulação e não mudam os lançamentos nem o cadastro. Para trocar valores de um mês, marque "Detalhar por cliente e por lançamento" e digite nas células (apague para voltar ao original); o × tira uma linha inteira.</p>
+    <div class="params" style="align-items:end">
+      <label>Tipo<select id="sxTipo"><option>Receita</option><option>Despesa</option></select></label>
+      <label>Descrição<input id="sxNome" type="text" placeholder="Ex.: novo cliente, aluguel, contador auxiliar"></label>
+      <label>Valor por mês (R$)<input id="sxValor" type="text" inputmode="decimal"></label>
+      <label>De<input id="sxDe" type="month" value="${Math.min(...P.anosSel)}-01"></label>
+      <label>Até (opcional)<input id="sxAte" type="month"></label>
+      <button class="btn primary" data-act="simExtraAdd">${ic('plus')}Adicionar</button>
+    </div>
+    ${(P.extras||[]).length?`<ul class="list" style="margin-top:10px">${P.extras.map(x=>`<li><div class="grow"><div class="t">${esc(x.nome)} <span class="chip">${x.tipo}</span></div><div class="m">${brl2(+x.valor)} por mês, de ${mesAno(x.de)}${x.ate?' até '+mesAno(x.ate):' em diante'}</div></div><button class="btn small" data-act="simExtraDel" data-id="${esc(x.id)}">Apagar</button></li>`).join('')}</ul>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px"><span class="muted" style="font-size:13px">${(P.extras||[]).length} linha(s) adicionada(s) · ${(P.excl||[]).length} retirada(s) · ${(Object.values(P.ov||{}).reduce((a,o)=>a+Object.values(o).reduce((b,x)=>b+Object.keys(x).length,0),0))} valor(es) alterado(s)</span>${(P.extras||[]).length||(P.excl||[]).length||Object.keys(P.ov||{}).length?`<button class="btn small" data-act="simAjZerar" style="margin-left:auto">Desfazer todos os ajustes</button>`:''}</div>
+  </div>
   <div style="display:flex;justify-content:flex-end;margin:-4px 0 6px"><button class="btn small" data-act="simMesXls">${ic('download')}Excel</button></div>
   ${R.map(tab).join('')}`;
 }
@@ -2122,6 +2142,12 @@ main.addEventListener('click',e=>{
     case 'simModo':setCfg({sim:{...(cfg().sim||{}),modo:b.dataset.v}});render();break;
     case 'simAno':{const sim={...(cfg().sim||{})};let L=(sim.anosSel&&sim.anosSel.length?sim.anosSel:[nowY+1]).slice();const v=+b.dataset.v;L=L.includes(v)?L.filter(x=>x!==v):[...L,v];if(!L.length){toast('Escolha pelo menos um ano');break}sim.anosSel=L.sort();setCfg({sim});render();break}
     case 'simMesXls':simMesXls();break;
+    case 'simExcl':{const sim={...(cfg().sim||{})};const L=new Set(sim.excl||[]);const k=b.dataset.k;L.has(k)?L.delete(k):L.add(k);sim.excl=[...L];setCfg({sim});render();break}
+    case 'simExtraAdd':{const nome=(main.querySelector('#sxNome')||{}).value?.trim(),valor=r2(parseBR((main.querySelector('#sxValor')||{}).value||'')),de=(main.querySelector('#sxDe')||{}).value,ate=(main.querySelector('#sxAte')||{}).value||'',tipo=(main.querySelector('#sxTipo')||{}).value||'Receita';
+      if(!nome){toast('Informe a descrição');break}if(!valor){toast('Informe o valor por mês');break}if(!de){toast('Informe o mês de início');break}if(ate&&ate<de){toast('O mês final é antes do inicial');break}
+      const sim={...(cfg().sim||{})};sim.extras=[...(sim.extras||[]),{id:uid('sx'),tipo,nome,valor,de,ate}];setCfg({sim});render();toast(`${tipo} "${nome}" adicionada à simulação`);break}
+    case 'simExtraDel':{const sim={...(cfg().sim||{})};sim.extras=(sim.extras||[]).filter(x=>x.id!==b.dataset.id);setCfg({sim});render();break}
+    case 'simAjZerar':{if(!confirm('Desfazer todas as linhas adicionadas, retiradas e valores alterados nesta simulação?'))break;const sim={...(cfg().sim||{})};delete sim.extras;delete sim.excl;delete sim.ov;setCfg({sim});render();break}
   }
 });
 main.addEventListener('change',e=>{
@@ -2137,6 +2163,9 @@ main.addEventListener('change',e=>{
   if(a==='dreM'){S.dreM=+t.value;render();return}
   if(a==='dreReg'){setCfg({dreRegime:t.value});render();return}
   if(a==='dreCat'){const dre={...(cfg().dre||{})};const k=t.dataset.t+'|'+t.dataset.g;if(t.value===defCat(t.dataset.t,t.dataset.g))delete dre[k];else dre[k]=t.value;setCfg({dre});render();return}
+  if(t.dataset.smc){const [k,ano,i]=t.dataset.smc.split('|');const sim={...(cfg().sim||{})};const ov=JSON.parse(JSON.stringify(sim.ov||{}));ov[ano]=ov[ano]||{};ov[ano][k]=ov[ano][k]||{};
+    const v=t.value.trim();if(v==='')delete ov[ano][k][i];else ov[ano][k][i]=r2(parseBR(v));if(!Object.keys(ov[ano][k]).length)delete ov[ano][k];if(!Object.keys(ov[ano]).length)delete ov[ano];
+    sim.ov=ov;setCfg({sim});render();const n=main.querySelector(`[data-smc="${t.dataset.smc}"]`);if(n){const td=n.closest('td');const prox=td&&td.nextElementSibling&&td.nextElementSibling.querySelector('input');(prox||n).focus()}return}
   if(t.dataset.sim){const sim={...(cfg().sim||{})};sim[t.dataset.sim]=t.type==='checkbox'?t.checked:(+t.value||0);setCfg({sim});render();const n=main.querySelector(`[data-sim="${t.dataset.sim}"]`);n&&n.focus();return}
 });
 
