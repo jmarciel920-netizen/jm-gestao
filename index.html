@@ -5766,10 +5766,13 @@ function robVIcms(){
     <button class="btn small${S.robSoGuia?' primary':''}" data-act="robSoGuia" aria-pressed="${!!S.robSoGuia}">Só quem tem guia</button>
     <button class="btn small" data-act="robIcmsRef2" data-v="${esc(ref)}">Consultar ${esc(ref)} de novo</button></div>
   ${d?`<div class="sumline"><span><b>${com.length}</b> cliente(s) com guia</span><span>Total: <b class="${tot?'neg':''}">${brl2(tot)}</b></span><span>Última consulta: <b>${dtHora(d.atualizado)}</b></span>${d.encontrou?'<span>Agenda do mês encerrada (guia encontrada)</span>':''}</div>
-    ${itens.length?`<div class="tscroll"><table class="cards"><thead><tr><th class="l">Cliente</th><th class="l">Tributo</th><th class="l">Situação</th><th>Vencimento</th><th>Principal</th><th>Multa + juros</th><th>Total</th></tr></thead><tbody>
-    ${itens.map(x=>`<tr><td><span class="lname">${esc(x.nome||x.razao)}</span><div class="muted" style="font-size:12px">I.E. ${esc(x.ie)}</div></td><td class="l" data-l="Tributo">${esc(ROB_TRIB[x.tributo]||x.tributo)}</td>
+    ${itens.length?`<div class="tscroll"><table class="cards"><thead><tr><th class="l">Cliente</th><th class="l">Tributo</th><th class="l">Situação</th><th>Vencimento</th><th>Principal</th><th>Multa + juros</th><th>Total</th><th class="l">Guia</th></tr></thead><tbody>
+    ${itens.map(x=>`<tr><td><span class="lname">${esc(x.nome||x.razao)}</span><div class="muted" style="font-size:12px">I.E. ${esc(x.ie)}</div></td><td class="l" data-l="Tributo" style="white-space:normal;max-width:170px">${esc(ROB_TRIB[x.tributo]||x.tributo)}</td>
       <td class="l" data-l="Situação">${chip(x)}${x.mensagem&&x.situacao!=='sem guia'?`<div class="muted" style="font-size:12px">${esc(x.mensagem)}</div>`:''}</td><td data-l="Vencimento">${esc(x.vencimento||'—')}</td>
-      <td data-l="Principal">${x.principal?brl2(brNum(x.principal)):'—'}</td><td data-l="Multa + juros">${x.principal?brl2(brNum(x.multa)+brNum(x.juros)+brNum(x.atualizacao)):'—'}</td><td data-l="Total"${x.total?' class="neg"':''}>${x.total?`<b>${brl2(brNum(x.total))}</b>`:'—'}</td></tr>`).join('')}</tbody></table></div>`
+      <td data-l="Principal">${x.principal?brl2(brNum(x.principal)):'—'}</td><td data-l="Multa + juros">${x.principal?brl2(brNum(x.multa)+brNum(x.juros)+brNum(x.atualizacao)):'—'}</td><td data-l="Total"${x.total?' class="neg"':''}>${x.total?`<b>${brl2(brNum(x.total))}</b>`:'—'}</td>
+      <td class="l" data-l="Guia">${x.pdf?(()=>{const c=x.clienteId?cliById(x.clienteId):null;const at=`data-trib="${esc(x.tributo)}" data-ie="${esc(dig(x.ie))}" data-ref="${esc(ref)}" data-nome="${esc(x.nome||x.razao||'')}"`;
+        return `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn small" data-act="robIcmsPdf" ${at}>PDF</button>${c&&dig(c.telefone).length>=10?`<button class="btn small" data-act="robIcmsZap" ${at} data-id="${esc(c.id)}" data-total="${esc(brNum(x.total))}" data-venc="${esc(x.vencimento||'')}">WhatsApp</button>`:''}</span>`})()
+        :x.situacao==='TEM GUIA'&&x.erroPdf?`<span class="muted" style="font-size:12px">${esc(x.erroPdf)}</span>`:'—'}</td></tr>`).join('')}</tbody></table></div>`
     :`<div class="empty"><h2 style="margin:0">Nenhum cliente com guia</h2><p>Nenhuma guia de ICMS calculada pela SEFAZ para ${esc(ref)}.</p></div>`}
     <details style="margin-top:12px"><summary class="hint" style="cursor:pointer">Histórico de consultas (${d.rodadas?.length||0})</summary><ul class="list">${[...(d.rodadas||[])].reverse().map(r=>`<li><div class="grow"><div class="t">${dtHora(r.em)} · ${r.origem==='agenda'?'agendada':'pelo botão'}</div><div class="m">${r.guias} cliente(s) com guia</div></div></li>`).join('')}</ul></details>`
   :`<div class="empty"><h2 style="margin:0">${esc(ref)} ainda não foi consultada</h2><p>A consulta automática roda nos dias ${robCfg().icmsDias.join(', ')} às ${esc(robCfg().icmsHora)}. Para consultar agora, use o botão acima.</p></div>`}`}
@@ -5860,6 +5863,19 @@ function robVDas(){
     ${meis.map(c=>`<tr><td><span class="lname">${esc(c.nome)}</span>${c.status!=='Ativo'?'<span class="chip man">inativo</span>':''}</td><td class="l" data-l="CNPJ">${esc(c.cpf_cnpj||'sem CNPJ')}</td>
       <td data-l="Gerar DAS"><input type="checkbox" data-rcli="das" data-id="${esc(c.id)}"${cl[c.id]?.das?' checked':''}${dig(c.cpf_cnpj).length===14?'':' disabled title="Sem CNPJ no cadastro"'}></td></tr>`).join('')}</tbody></table></div>`
     :'<p class="hint">Nenhum cliente com regime MEI no cadastro.</p>'}</div>`}
+async function robIcmsBaixar(trib,ie,ref,nome){
+  const per=refIso(ref).replace('-','');const r=await store.db.doc(`robos_pdf/icms_${trib}_${ie}_${per}`).get();
+  if(!r.exists){toast('PDF não encontrado — consulte a referência de novo');return null}
+  const d=r.data(),bin=atob(d.pdf),u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+  const b=new Blob([u8],{type:'application/pdf'}),url=URL.createObjectURL(b),el=document.createElement('a');
+  el.href=url;el.download=d.arquivo||`ICMS ${trib} ${ref.replace('/','-')} ${nome||ie}.pdf`;document.body.appendChild(el);el.click();el.remove();setTimeout(()=>URL.revokeObjectURL(url),4000);return true}
+main.addEventListener('click',async e=>{if(S.tab!=='robos'||S.robV!=='icms')return;const b=e.target.closest('[data-act]');if(!b)return;const a=b.dataset.act,D=b.dataset;
+  if(a==='robIcmsPdf'){try{await robIcmsBaixar(D.trib,D.ie,D.ref,D.nome)}catch(err){toast('Não consegui baixar: '+(err.message||err))}}
+  else if(a==='robIcmsZap'){const c=cliById(D.id);if(!c)return;try{await robIcmsBaixar(D.trib,D.ie,D.ref,D.nome)}catch(err){}
+    const tel=dig(c.telefone),num=tel.length<=11?'55'+tel:tel;const nome=String(c.nome||'').split(' ')[0];
+    const txt=`Olá, ${nome}! Segue a guia de ICMS (${ROB_TRIB[D.trib]||D.trib}) referente a ${D.ref}, no valor de ${brl2(+D.total||0)}${D.venc?`, com vencimento em ${D.venc}`:''}. O PDF está em anexo. Qualquer dúvida, estou à disposição. — JM Gestão`;
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(txt)}`,'_blank');toast('PDF baixado: anexe no WhatsApp que abriu')}
+});
 async function robDasBaixar(cnpj,ref,nome){
   const per=refIso(ref).replace('-','');const r=await store.db.doc(`robos_pdf/das_${cnpj}_${per}`).get();
   if(!r.exists){toast('PDF não encontrado — gere de novo');return null}
