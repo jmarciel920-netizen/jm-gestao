@@ -1888,7 +1888,7 @@ function simDefaults(){
   return{clientes:ativos.length,novos:2,honorario:ativos.length?Math.round(cart/ativos.length):150,meses:24,churn:2,reajuste:8,fixo:Math.round(fixo/n),varPct:rbT?Math.round(varr/rbT*1000)/10:10,invest:0,sazonais:true};
 }
 /* ---- simulador: modos anuais (crescimento do faturamento e comparação de cenários) ---- */
-const SIM_MODOS=[['cli','Carteira mês a mês'],['anual','Crescimento anual do faturamento'],['cen','Comparar cenários']];
+const SIM_MODOS=[['cli','Carteira mês a mês'],['mes','Projeção mês a mês por ano'],['anual','Crescimento anual do faturamento'],['cen','Comparar cenários']];
 const LIM_SIMPLES=4800000;
 const brlK=v=>Math.abs(v)>=1e6?'R$ '+(v/1e6).toFixed(2).replace('.',',')+' mi':Math.abs(v)>=1e5?'R$ '+Math.round(v).toLocaleString('pt-BR'):brl(v);
 function simAnualDefaults(){
@@ -1962,8 +1962,103 @@ function vSimCen(P,inp){
   </tbody></table></div>
   <p class="hint">Em laranja, os anos em que o faturamento passa do limite do Simples Nacional (${brl(LIM_SIMPLES)}).</p>`;
 }
+/* ---- simulador: projeção mês a mês por ano (honorários do cadastro + recorrentes) com reajuste ---- */
+function recorrentesPorGrupo(tipo){
+  /* grupos de lançamentos que se repetem: marcados como repetição, ou mesma descrição/grupo em 3+ meses */
+  const fx=cfg().fixas||{},G=new Map(),key=m=>m.rep&&m.rep.grp?'r:'+m.rep.grp:'s:'+m.tipo+'|'+norm(m.descricao||'')+'|'+(m.grupo||'');
+  for(const m of allMovs()){
+    if(m.tipo!==tipo)continue;
+    if(tipo==='Receita'&&clienteDe(m)&&isHon(m.grupo))continue; // honorários vêm do cadastro dos clientes
+    const k=key(m);if(!G.has(k))G.set(k,[]);G.get(k).push(m)}
+  const out=[];
+  /* séries importadas que vão até o último mês lançado no sistema continuam depois dele (não têm fim de verdade) */
+  let hz='';for(const m of allMovs())if(m.tipo===tipo&&m.data>hz)hz=m.data;hz=hz.slice(0,7);
+  for(const [k,ms] of G){
+    const meses=new Set(ms.map(x=>x.data.slice(0,7)));
+    const fixa=(k.startsWith('r:')&&ms.some(x=>x.rep.tipo==='fixa')&&!(fx[k.slice(2)]&&fx[k.slice(2)].fim))||(k.startsWith('s:')&&[...meses].sort().pop()===hz);
+    if(!k.startsWith('r:')&&meses.size<3)continue;
+    ms.sort((a,b)=>a.data.localeCompare(b.data));const t=ms[ms.length-1];
+    const porMes={};for(const x of ms){const ym=x.data.slice(0,7);porMes[ym]=r2((porMes[ym]||0)+(+x.valor||0))}
+    out.push({k,nome:String(t.descricao||'').replace(/\s*\(\d+\/\d+\)$/,''),grupo:t.grupo||'',fixa,fim:t.data.slice(0,7),ult:+t.valor||0,porMes});
+  }
+  return out;
+}
+function valorRecMes(g,ym){if(g.porMes[ym]!=null)return g.porMes[ym];return g.fixa&&ym>g.fim?g.ult:0}
+function projMesAno(P,ano){
+  const yms=Array.from({length:12},(_,i)=>`${ano}-${pad(i+1)}`);
+  /* reajuste: aplica a partir do mês escolhido do primeiro ano; acumula a cada ano se marcado */
+  const a0=Math.min(...P.anosSel),mesR=+P.rMes||0;
+  const fator=(pct,i)=>{if(!pct)return 1;let n=0;
+    if(P.acum){n=ano-a0+(i>=mesR?1:0)}else n=(ano>a0||i>=mesR)?1:0;return Math.pow(1+pct/100,n)};
+  const cli=[];
+  for(const c of cliComHist()){if(ehPropria(c))continue;
+    const v=yms.map((ym,i)=>{if(!ativoEm(c,ym))return 0;const e=cliEm(c,ym);return r2((e.honorario||0)*(i===11&&e.treze?2:1))});
+    if(v.some(x=>x))cli.push({nome:c.nome,v})}
+  cli.sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  const mk=tipo=>recorrentesPorGrupo(tipo).map(g=>({nome:g.nome+(g.grupo?' · '+g.grupo:''),v:yms.map(ym=>valorRecMes(g,ym))})).filter(x=>x.v.some(y=>y)).sort((a,b)=>b.v.reduce((s,y)=>s+y,0)-a.v.reduce((s,y)=>s+y,0));
+  const outR=mk('Receita'),desp=mk('Despesa');
+  const soma=L=>yms.map((_,i)=>r2(L.reduce((s,x)=>s+x.v[i],0)));
+  const hon=soma(cli),oR=soma(outR),rec=hon.map((v,i)=>r2(v+oR[i])),des=soma(desp);
+  const recA=rec.map((v,i)=>r2(v*fator(+P.rRec||0,i))),desA=des.map((v,i)=>r2(v*fator(+P.rDesp||0,i)));
+  return{ano,cli,outR,desp,hon,oR,rec,des,recA,desA,res:rec.map((v,i)=>r2(v-des[i])),resA:recA.map((v,i)=>r2(v-desA[i]))};
+}
+function vSimMes(P){
+  if(!P.anosSel||!P.anosSel.length)P.anosSel=[nowY+1];
+  const anosOp=[nowY,nowY+1,nowY+2,nowY+3,nowY+4,nowY+5];
+  const R=P.anosSel.slice().sort().map(a=>projMesAno(P,a));
+  const S_=v=>v.reduce((a,b)=>a+b,0);
+  const linha=(nome,v,cls='',st='')=>`<tr${st?` style="${st}"`:''}><td class="l${cls?' '+cls:''}">${nome}</td>${v.map(x=>`<td class="${x<0?'neg':''}">${x?num(x):'<span class="muted">–</span>'}</td>`).join('')}<td style="font-weight:600" class="${S_(v)<0?'neg':''}">${num(S_(v))}</td></tr>`;
+  const dif=(a,b)=>a.map((x,i)=>r2(x-b[i]));
+  const tab=r=>{const rr=+P.rRec||0,rd=+P.rDesp||0;
+    return `<h2 class="sec">${r.ano}</h2><div class="tscroll"><table class="simmes"><thead><tr><th class="l">Linha</th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead><tbody>
+    <tr><td class="l" colspan="14" style="font-weight:700;background:var(--soft,transparent)">Receitas</td></tr>
+    ${linha('Honorários (cadastro dos clientes)',r.hon)}
+    ${P.det?r.cli.map(c=>linha('<span class="muted">· '+esc(c.nome)+'</span>',c.v,'','font-size:12px')).join(''):''}
+    ${linha('Outras receitas recorrentes',r.oR)}
+    ${P.det?r.outR.map(c=>linha('<span class="muted">· '+esc(c.nome)+'</span>',c.v,'','font-size:12px')).join(''):''}
+    ${linha('<b>Receitas, valores atuais</b>',r.rec)}
+    ${rr?linha(`<b>Receitas com +${String(rr).replace('.',',')}%</b>`,r.recA)+linha('Quanto representa o aumento',dif(r.recA,r.rec),'pos','color:var(--success,#16a34a)'):''}
+    <tr><td class="l" colspan="14" style="font-weight:700">Despesas</td></tr>
+    ${linha('<b>Despesas recorrentes, valores atuais</b>',r.des)}
+    ${P.det?r.desp.map(c=>linha('<span class="muted">· '+esc(c.nome)+'</span>',c.v,'','font-size:12px')).join(''):''}
+    ${rd?linha(`<b>Despesas com +${String(rd).replace('.',',')}%</b>`,r.desA)+linha('Quanto representa o aumento',dif(r.desA,r.des),'neg'):''}
+    <tr><td class="l" colspan="14" style="font-weight:700">Resultado</td></tr>
+    ${linha('Resultado com valores atuais',r.res)}
+    ${rr||rd?linha('<b>Resultado com os aumentos</b>',r.resA)+linha('Diferença no resultado',dif(r.resA,r.res)):''}
+    </tbody></table></div>`};
+  const tot=k=>R.reduce((a,r)=>a+S_(r[k]),0);
+  const ganhoR=tot('recA')-tot('rec'),ganhoD=tot('desA')-tot('des'),efeito=ganhoR-ganhoD;
+  const rotAnos=R.map(r=>r.ano).join(', ');
+  return simTopo('mes',`Os 12 meses de cada ano com os honorários do cadastro e as receitas e despesas recorrentes`)+`
+  <div class="panel"><div class="params" style="align-items:end">
+    <div class="fl" style="grid-column:1/-1">Anos<div class="seg" role="group" aria-label="Anos" style="flex-wrap:wrap;margin-top:6px">${anosOp.map(a=>`<button data-act="simAno" data-v="${a}" aria-pressed="${P.anosSel.includes(a)}">${a}</button>`).join('')}</div></div>
+    <label>Aumento nas receitas (%)<input type="number" step="0.1" data-sim="rRec" value="${P.rRec}"></label>
+    <label>Aumento nas despesas (%)<input type="number" step="0.1" data-sim="rDesp" value="${P.rDesp}"></label>
+    <label>A partir de<select data-sim="rMes">${MESES_L.map((m,i)=>`<option value="${i}"${i===+P.rMes?' selected':''}>${m} de ${Math.min(...P.anosSel)}</option>`).join('')}</select></label>
+    <label style="flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" data-sim="acum"${P.acum?' checked':''}> Repetir o aumento a cada ano</label>
+    <label style="flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" data-sim="det"${P.det?' checked':''}> Detalhar por cliente e por lançamento</label>
+  </div>
+  <p class="hint" style="margin:10px 0 0">Honorários: o valor de cada cliente ativo no mês, pelo cadastro e pelas mudanças já programadas (13º honorário em dezembro). Recorrentes: lançamentos fixos ou que se repetem todo mês; usam o valor lançado no mês e, depois do último lançamento, repetem o último valor (os que já têm data para acabar, como parcelas, param no fim). ${P.acum?'O aumento é repetido a cada ano, sobre o ano anterior.':'O aumento é aplicado uma vez.'}</p></div>
+  <section class="kpis">
+    ${stat('O aumento nas receitas representa',brlK(ganhoR),`a mais em ${rotAnos}`,'dollar','a')}
+    ${stat('O aumento nas despesas representa',brlK(ganhoD),`a mais em ${rotAnos}`,'wallet','w',ganhoD>0?'neg':'')}
+    ${stat('Efeito no resultado',brlK(efeito),'receitas menos despesas','percent','p',efeito<0?'neg':'')}
+    ${stat('Resultado com os aumentos',brlK(tot('resA')),`antes: ${brlK(tot('res'))}`,'target','i',tot('resA')<0?'neg':'')}
+  </section>
+  <div style="display:flex;justify-content:flex-end;margin:-4px 0 6px"><button class="btn small" data-act="simMesXls">${ic('download')}Excel</button></div>
+  ${R.map(tab).join('')}`;
+}
+function simMesXls(){
+  const P={rRec:5,rDesp:5,rMes:0,acum:true,det:false,anosSel:[nowY+1],...(cfg().sim||{})};
+  const abas=P.anosSel.slice().sort().map(a=>{const r=projMesAno(P,a),rows=[['Linha',...MESES_L,'Total']];const add=(n,v)=>rows.push([n,...v,r2(v.reduce((x,y)=>x+y,0))]);
+    add('Honorários (cadastro)',r.hon);r.cli.forEach(c=>add('  '+c.nome,c.v));add('Outras receitas recorrentes',r.oR);r.outR.forEach(c=>add('  '+c.nome,c.v));
+    add('Receitas, valores atuais',r.rec);add(`Receitas com +${P.rRec}%`,r.recA);add('Despesas recorrentes, valores atuais',r.des);r.desp.forEach(c=>add('  '+c.nome,c.v));add(`Despesas com +${P.rDesp}%`,r.desA);
+    add('Resultado, valores atuais',r.res);add('Resultado com os aumentos',r.resA);return[String(a),rows]});
+  baixar(`Projecao-mensal-${P.anosSel.join('-')}-${carimbo()}.xlsx`,xlsxBlob(abas)).then(ok=>ok&&toast('Planilha gerada'));
+}
 function vSim(){
   const modo=(cfg().sim||{}).modo||'cli';
+  if(modo==='mes')return vSimMes({rRec:5,rDesp:5,rMes:0,acum:true,det:false,...(cfg().sim||{})});
   if(modo!=='cli'){const P={...simAnualDefaults(),...(cfg().sim||{})};const inp=(k,l,step='1')=>`<label>${l}<input type="number" step="${step}" data-sim="${k}" value="${P[k]}"></label>`;return modo==='cen'?vSimCen(P,inp):vSimAnual(P,inp)}
   const P={...simDefaults(),...(cfg().sim||{})};
   // curva sazonal: projeção dos serviços do ano atual (ou próximo, se existir)
@@ -2025,6 +2120,8 @@ main.addEventListener('click',e=>{
     case 'print':window.print();break;
     case 'simReset':setCfg({sim:{modo:(cfg().sim||{}).modo||'cli'}});render();break;
     case 'simModo':setCfg({sim:{...(cfg().sim||{}),modo:b.dataset.v}});render();break;
+    case 'simAno':{const sim={...(cfg().sim||{})};let L=(sim.anosSel&&sim.anosSel.length?sim.anosSel:[nowY+1]).slice();const v=+b.dataset.v;L=L.includes(v)?L.filter(x=>x!==v):[...L,v];if(!L.length){toast('Escolha pelo menos um ano');break}sim.anosSel=L.sort();setCfg({sim});render();break}
+    case 'simMesXls':simMesXls();break;
   }
 });
 main.addEventListener('change',e=>{
