@@ -5342,10 +5342,11 @@ function msgLembrete(c,itens,tipo){
   return (tipo==='0'?(cfg().msgLemb0||MSG_LEMB0):(cfg().msgLemb3||MSG_LEMB3)).replace(/\{nome\}/g,primeiro).replace(/\{itens\}/g,linhas.join('\n')).replace(/\{total\}/g,brl2(tot))
     .replace(/\{vencimento\}/g,dBR(venc).slice(0,5)).replace(/\{pix\}/g,pix?`\nPix: ${pix}`:'');
 }
+const lembDias=()=>Math.min(10,Math.max(1,parseInt(cfg().lembDias)||3));
 /* quem lembrar hoje: vence hoje (lembrete do dia) ou nos próximos 3 dias (lembrete antecipado; cobre fim de semana) */
 function lembretesHoje(){
   if(cfg().lembOff)return[];
-  const env=cfg().lembEnv||{},lim=addDays(todayISO,3),mp=new Map();
+  const env=cfg().lembEnv||{},lim=addDays(todayISO,lembDias()),mp=new Map();
   for(const m of allMovs()){
     if(m.tipo!=='Receita'||m.status==='Pago'||m.data<todayISO||m.data>lim)continue;
     const cid=clienteDe(m);if(!cid)continue;const c=cliById(cid);if(!c||ehPropria(c))continue;
@@ -5361,7 +5362,7 @@ function blocoLembretes(){
   const L=lembretesHoje();if(!L.length)return'';
   const comFone=L.filter(x=>foneWa(x.c.telefone));
   return `<div class="panel tk-sec" data-lemb><h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Lembretes de pagamento <small>${L.length}</small>${comFone.length>1?`<button class="btn small primary" data-act="lembSeq" style="margin-left:auto">${ic('wa')}Enviar em sequência</button>`:''}</h3>
-    <p class="hint" style="margin:0 0 8px">Mensagem amigável antes do vencimento: 3 dias antes e no dia. Quem já pagou some sozinho da lista.</p>
+    <p class="hint" style="margin:0 0 8px">Mensagem amigável antes do vencimento: ${lembDias()} dia(s) antes e no dia. Quem já pagou some sozinho da lista. O prazo muda em Backup e configurações.</p>
     <ul class="list">${L.map(x=>{const f=foneWa(x.c.telefone),tot=x.movs.reduce((a,m)=>a+(+m.valor||0),0);
       return `<li style="flex-wrap:wrap"><span class="chip ${x.tipo==='0'?'fora':'saz'}" style="margin:0">${x.tipo==='0'?'vence hoje':'vence '+dBR(x.movs[0].data).slice(0,5)}</span><div class="grow" style="min-width:180px"><div class="t">${esc(x.c.nome)}</div><div class="m">${x.movs.length} lançamento(s), ${brl2(tot)}</div></div>
       <span style="display:flex;gap:6px;flex-wrap:wrap">${f?`<a class="btn small primary" href="https://wa.me/${f}?text=${encodeURIComponent(msgLembrete(x.c,[...x.movs],x.tipo))}" target="_blank" rel="noopener" data-lenv="${esc(x.k)}">${ic('wa')}Enviar</a>`:`<button class="btn small" data-act="waSemFone" data-id="${esc(x.c.id)}">Cadastrar telefone</button>`}
@@ -5382,15 +5383,16 @@ if(!EQUIPE){
   // configurações: chave Pix e textos dos lembretes
   {const f=VIEWS.cfgp;if(f)VIEWS.cfgp=()=>{const h=f();const c=cfg();
     const bloco=`<div class="cols eq"><div class="panel"><h3>Lembretes de pagamento</h3>
-      <label style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><input type="checkbox" data-lcfg="on"${c.lembOff?'':' checked'}> Mostrar lembretes 3 dias antes e no dia do vencimento, em Tarefas do dia</label>
+      <label style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><input type="checkbox" data-lcfg="on"${c.lembOff?'':' checked'}> Mostrar lembretes antes e no dia do vencimento, em Tarefas do dia</label>
+      <label class="fl" style="margin-bottom:10px">Avisar quantos dias antes do vencimento<input type="number" min="1" max="10" data-lcfg="lembDias" value="${lembDias()}" style="max-width:120px"></label>
       <label class="fl">Chave Pix para colocar na mensagem<input type="text" data-lcfg="pix" value="${esc(c.pix||'')}" placeholder="CNPJ, e-mail, telefone ou chave aleatória"></label>
       <p class="hint" style="margin-top:8px">Use {nome}, {itens}, {total}, {vencimento} e {pix} nas mensagens.</p></div>
       <div class="panel"><h3>Mensagens dos lembretes</h3>
-      <label class="fl">3 dias antes<textarea data-lcfg="msgLemb3" rows="6" style="width:100%">${esc(c.msgLemb3||MSG_LEMB3)}</textarea></label>
+      <label class="fl">Antes do vencimento<textarea data-lcfg="msgLemb3" rows="6" style="width:100%">${esc(c.msgLemb3||MSG_LEMB3)}</textarea></label>
       <label class="fl" style="margin-top:8px">No dia<textarea data-lcfg="msgLemb0" rows="6" style="width:100%">${esc(c.msgLemb0||MSG_LEMB0)}</textarea></label></div></div>`;
     const i=h.indexOf('<div class="cols eq">');return i<0?h+bloco:h.slice(0,i)+bloco+h.slice(i)}}
   main.addEventListener('change',e=>{const t=e.target,k=t.dataset.lcfg;if(!k)return;
-    if(k==='on')setCfg({lembOff:t.checked?undefined:true});else setCfg({[k]:t.value.trim()||undefined});toast('Salvo')});
+    if(k==='on')setCfg({lembOff:t.checked?undefined:true});else if(k==='lembDias'){const v=Math.min(10,Math.max(1,parseInt(t.value)||3));setCfg({lembDias:v});t.value=v;toast(`Lembrete ${v} dia(s) antes do vencimento`);return}else setCfg({[k]:t.value.trim()||undefined});toast('Salvo')});
 }
 
 /* ================= SISTEMA ÚNICO: DADOS FINANCEIROS SEPARADOS (só o dono lê) =================
