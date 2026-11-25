@@ -6201,6 +6201,384 @@ main.addEventListener('change',e=>{if(S.tab!=='robos')return;const t=e.target;
   el.innerHTML='Robôs fiscais'+(n?` <span class="chip fora" style="margin-left:4px;padding:0 6px" title="clientes com guia de ICMS">${n}</span>`:'')+(p?` <span class="chip saz" style="margin-left:4px;padding:0 6px" title="computador aguardando autorização">!</span>`:'')}}catch(err){}return r}}
 setTimeout(()=>{try{robEscutar()}catch(e){}},3000);
 }
+
+/* ================= CONTRATOS — contratos de prestação de serviços contábeis =================
+   financeiro/contratos -> {itens:[contratos], precos:{tabela de preços}}  [só o dono: tem honorários]
+   Gera o .docx no padrão do contrato v3 (Botan Psicologia), montando as cláusulas conforme as opções. */
+if(UNIF&&!EQUIPE){
+ICON.contratos='<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h8"/><path d="M8 17h5"/>';
+{const i=PAGES.findIndex(p=>p[0]==='clientes');PAGES.splice(i<0?PAGES.length:i+1,0,['contratos','Contratos'])}
+TITLES.contratos='Contratos';VIEWS.contratos=()=>vContratos();buildNav();
+S.ctSt=S.ctSt||'';
+
+const CT_TPL='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';
+const CT_ST=['Rascunho','Enviado','Assinado','Encerrado'];
+const CT_CHIP={Rascunho:'man',Enviado:'saz',Assinado:'ok',Encerrado:'fora'};
+const ctDoc=()=>S.fin.contratos||{itens:[]};
+const ctLista=()=>ctDoc().itens||[];
+const ctById=id=>ctLista().find(x=>x.id===id);
+function ctGravar(itens,precos){
+  if(!finOk()){toast('Os dados ainda estão carregando. Tente de novo em alguns segundos.');return false}
+  const d=ctDoc();S.fin.contratos=JSON.parse(JSON.stringify({itens:itens||d.itens||[],precos:precos||d.precos||null}));
+  salvar('financeiro','contratos');return true}
+const ctDig=s=>String(s||'').replace(/\D/g,'');
+const ctFmtDoc=s=>{const d=ctDig(s);return d.length===14?`${d.slice(0,2)}.${d.slice(2,5)}.${d.slice(5,8)}/${d.slice(8,12)}-${d.slice(12)}`:d.length===11?`${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`:String(s||'')};
+const ctNum=v=>{const n=typeof v==='number'?v:parseBR(v);return isFinite(n)?r2(n):0};
+const ctR$=v=>'R$ '+ctNum(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const ctDExt=iso=>{if(!iso)return '___';const [y,m,d]=iso.split('-');return `${+d} de ${MESES_L[+m-1]} de ${y}`};
+const ctMesAno=iso=>{if(!iso)return '___';const [y,m]=iso.split('-');return `${MESES_L[+m-1]} de ${y}`};
+const ctDBR=iso=>iso?iso.split('-').reverse().join('/'):'';
+function ctExtenso(v){
+  const t=Math.round(ctNum(v)*100),re=Math.floor(t/100),ce=t%100;
+  const U=['','um','dois','três','quatro','cinco','seis','sete','oito','nove','dez','onze','doze','treze','quatorze','quinze','dezesseis','dezessete','dezoito','dezenove'];
+  const D=['','','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa'];
+  const C=['','cento','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','novecentos'];
+  const a999=n=>{if(!n)return '';if(n===100)return 'cem';const c=Math.floor(n/100),r=n%100,p=[];if(c)p.push(C[c]);if(r)p.push(r<20?U[r]:D[Math.floor(r/10)]+(r%10?' e '+U[r%10]:''));return p.join(' e ')};
+  const grp=n=>{const m=Math.floor(n/1000),r=n%1000,p=[];if(m)p.push(m===1?'mil':a999(m)+' mil');if(r)p.push(a999(r));return p.join(m&&r&&(r<100||r%100===0)?' e ':' ')};
+  const p=[];if(re)p.push(re===1?'um real':grp(re)+(re%1000000===0?' de reais':' reais'));if(ce)p.push(ce===1?'um centavo':a999(ce)+' centavos');
+  return p.join(' e ')||'zero reais'}
+const ctVal=v=>`**${ctR$(v)} (${ctExtenso(v)})**`;
+const ctSoc=c=>{let s=c&&c.socios;if(typeof s==='string'){try{s=JSON.parse(s)}catch(e){s=[]}}return Array.isArray(s)?s.filter(x=>x&&x.nome):[]};
+function ctAddMes(iso,n){const [y,m]=iso.split('-').map(Number);const d=new Date(y,m-1+n,1);return d.getFullYear()+'-'+pad(d.getMonth()+1)}
+
+/* ---------- tabela de preços ---------- */
+function ctMedia(reg){const cs=clientes().filter(c=>c.status==='Ativo'&&c.regime===reg&&+c.honorario_mensal>0&&!(typeof ehPropria==='function'&&ehPropria(c)));
+  return cs.length?{v:cs.reduce((a,c)=>a+(+c.honorario_mensal),0)/cs.length,n:cs.length}:{v:0,n:0}}
+function ctPrecos(){const p=ctDoc().precos||{};const reg={...(p.regimes||{})};
+  for(const g of REGIMES)if(reg[g]==null){const m=ctMedia(g).v;reg[g]=m?Math.round(m/10)*10:0}
+  return{regimes:reg,empregado:p.empregado??40,comercio:p.comercio??0,saude:p.saude??0,inicial:p.inicial??500,dasn:p.dasn??150}}
+const ctSugestao=D=>{const p=ctPrecos();return r2((+p.regimes[D.regime]||0)+(+D.empregados||0)*(+p.empregado||0)+(D.comercio?+p.comercio||0:0)+(D.saude?+p.saude||0:0))};
+
+/* ---------- modelo ---------- */
+function ctNovo(cli){
+  const c=cli||{},s=ctSoc(c)[0]||{},p=ctPrecos();
+  const prox=ctAddMes(todayISO,1)+'-'+pad(c.dia_vencimento||10);
+  const D={id:uid('k'),clienteId:c.id||'',status:'Rascunho',criado:todayISO,
+    razao:String(c.razao_social||c.nome||'').toUpperCase(),cnpj:ctFmtDoc(c.cpf_cnpj||''),qualifExtra:'',sede:'',municipio:'',
+    repNome:s.nome||'',repCpf:'',repEnd:'',repGenero:'M',
+    regime:c.regime||'Simples Nacional',atividade:'',comercio:false,saude:false,fatorR:(c.regime||'Simples Nacional')==='Simples Nacional',
+    honorario:+c.honorario_mensal||0,diaVenc:+c.dia_vencimento||10,inicio:todayISO,primeira:prox,cortesia:'',
+    empregados:0,adicEmp:p.empregado,treze:true,assist:true,prazo:'',obs:'',
+    inicial:{on:false,desc:'transformação do registro de Microempreendedor Individual (MEI) em sociedade limitada unipessoal',valor:p.inicial},
+    dasn:{on:false,valor:p.dasn,venc:''}};
+  if(!D.honorario)D.honorario=ctSugestao(D);
+  return D}
+function ctPreencher(D,c){ /* traz do cadastro o que estiver vazio */
+  const s=ctSoc(c)[0]||{};
+  if(!D.razao)D.razao=String(c.razao_social||c.nome||'').toUpperCase();
+  if(!D.cnpj)D.cnpj=ctFmtDoc(c.cpf_cnpj||'');
+  if(!D.repNome&&s.nome)D.repNome=s.nome;
+  if(c.regime)D.regime=c.regime;
+  if(!+D.honorario&&+c.honorario_mensal)D.honorario=+c.honorario_mensal;
+  if(c.dia_vencimento)D.diaVenc=+c.dia_vencimento}
+function ctFaltas(D){const f=[];const ck=(v,n)=>{if(!String(v??'').trim())f.push(n)};
+  ck(D.razao,'razão social');ck(D.cnpj,'CNPJ');ck(D.sede,'endereço da sede');ck(D.repNome,'nome do representante');ck(D.repCpf,'CPF do representante');ck(D.repEnd,'endereço do representante');
+  if(!(+D.honorario>0))f.push('honorário mensal');ck(D.primeira,'vencimento da 1ª mensalidade');ck(D.inicio,'início da vigência');
+  if(D.dasn&&D.dasn.on)ck(D.dasn.venc,'vencimento da DASN-SIMEI');return f}
+function ctProxReaj(D){if(!D.primeira)return '';const y0=+D.primeira.slice(0,4)+1,yc=today.getFullYear();const y=y0>yc?y0:(today.getMonth()===0?yc:yc+1);return `jan/${y}`}
+
+/* ---------- cláusulas ---------- */
+function ctItens(D){
+  const F=D.repGenero==='F',emp=Math.max(0,+D.empregados||0),reg=D.regime,simples=reg==='Simples Nacional',mei=reg==='MEI',pres=reg==='Lucro Presumido';
+  const socTxt=F?'da sócia':'do sócio';
+  const out=[];const H=(k,t)=>out.push({t:'H',k,x:t}),Sb=x=>out.push({t:'S',x}),B=x=>out.push({t:'B',x}),L=x=>out.push({t:'L',x});
+  H('objeto','OBJETO DO CONTRATO');
+  B('A CONTRATADA compromete-se a prestar os seguintes serviços à CONTRATANTE:');
+  Sb('1.1 CONTABILIDADE');
+  if(mei){L('Controle e orientação sobre a escrituração simplificada de receitas e despesas do Microempreendedor Individual.');L('Acompanhamento do limite anual de faturamento do MEI e orientação sobre eventual desenquadramento.')}
+  else{L('Elaboração da contabilidade de acordo com as Normas Brasileiras de Contabilidade — NBC.');L('Elaboração do Balanço Patrimonial e demais Demonstrações Contábeis obrigatórias.');L('Emissão de balancetes mensais.')}
+  L('Orientação e controle da aplicação dos dispositivos legais vigentes, federais, estaduais e municipais.');
+  Sb('1.2 OBRIGAÇÕES FISCAIS');
+  if(simples)L('Apuração mensal do Simples Nacional (PGDAS-D) e emissão da guia DAS.');
+  if(mei)L('Emissão mensal da guia DAS-MEI.');
+  if(pres)L('Apuração mensal e trimestral de PIS, COFINS, IRPJ e CSLL, e transmissão da DCTFWeb, EFD-Contribuições e EFD-Reinf.');
+  if(simples&&D.fatorR)L(`Acompanhamento mensal do Fator R, com orientação sobre o valor do pró-labore ${socTxt} para o correto enquadramento da atividade${D.atividade?' de '+D.atividade:''} no Anexo III ou no Anexo V do Simples Nacional.`);
+  if(D.comercio)L('Apuração e acompanhamento do ICMS, inclusive substituição tributária e diferencial de alíquotas, quando aplicáveis, e das obrigações estaduais junto à SEFAZ/MS.');
+  L('Elaboração dos registros fiscais obrigatórios, eletrônicos ou não, perante os órgãos municipais, estaduais e federais.');
+  L('Atendimento às demais exigências previstas na legislação, bem como aos eventuais procedimentos fiscais.');
+  Sb('1.3 DEPARTAMENTO PESSOAL');
+  L('Registro de empregados e serviços correlatos.');
+  L('Elaboração da folha de pagamento dos empregados e de pró-labore, bem como das guias de recolhimento dos encargos sociais e tributos afins.');
+  L('Elaboração, orientação e controle da aplicação dos preceitos da CLT e da legislação previdenciária.');
+  if(D.inicial&&D.inicial.on){
+    H('inicial','HONORÁRIOS DE SERVIÇO INICIAL');
+    B(`A CONTRATANTE pagará à CONTRATADA, pelos serviços de ${D.inicial.desc||'___'}, o montante de ${ctVal(D.inicial.valor)}, sendo 50% (cinquenta por cento) de entrada, na assinatura deste contrato, e 50% (cinquenta por cento) após o deferimento do registro pela JUCEMS.`);
+    if(D.dasn&&D.dasn.on)B(`**PARÁGRAFO ÚNICO.** A elaboração e a transmissão da Declaração Anual do Simples Nacional do Microempreendedor Individual (DASN-SIMEI), relativa ao período em que a CONTRATANTE esteve enquadrada como MEI, serão cobradas à parte, no valor de ${ctVal(D.dasn.valor)}, com vencimento em **${ctDExt(D.dasn.venc)}**.`);
+  }else if(D.dasn&&D.dasn.on){
+    H('inicial','DECLARAÇÃO ANUAL DO MEI');
+    B(`A elaboração e a transmissão da Declaração Anual do Simples Nacional do Microempreendedor Individual (DASN-SIMEI), relativa ao período em que a CONTRATANTE esteve enquadrada como MEI, serão cobradas à parte, no valor de ${ctVal(D.dasn.valor)}, com vencimento em **${ctDExt(D.dasn.venc)}**.`)}
+  H('mensais','HONORÁRIOS MENSAIS');
+  B(`A CONTRATANTE pagará à CONTRATADA, pelos serviços previstos na Cláusula {#objeto}, honorários mensais de ${ctVal(D.honorario)}, com vencimento **todo dia ${D.diaVenc||10} (${ctExtenso(D.diaVenc||10).replace(/\s+(real|reais)$/,'')}) de cada mês**, mediante PIX ou boleto bancário emitido pela CONTRATADA.`);
+  B(`**§1°.** ${D.cortesia?`Os serviços prestados em ${D.cortesia} serão concedidos a título de cortesia, sem cobrança de honorários mensais. `:''}A primeira mensalidade, referente a ${ctMesAno(D.primeira)}, vencerá em **${ctDExt(D.primeira)}**, e as demais serão devidas mensalmente até o encerramento do contrato.`);
+  B(`**§2°.** Os honorários mensais contemplam a folha de pró-labore ${socTxt}${emp?` e até ${emp} (${ctExtenso(emp).replace(/\s+(real|reais)$/,'')}) empregado${emp>1?'s':''} registrado${emp>1?'s':''}`:', sem empregados registrados'}. Por empregado CLT ${emp?'registrado além desse número':'que vier a ser registrado'}, será cobrado adicional de ${ctVal(D.adicEmp)} mensais por empregado, a partir do mês subsequente ao registro.`);
+  B('**§3°.** Os acréscimos com valores já fixados neste contrato, como o adicional por empregado previsto no §2°, serão aplicados automaticamente no mês subsequente ao evento, independentemente de aditivo contratual. A inclusão de serviços novos, não previstos neste instrumento, dependerá de proposta prévia e da concordância da CONTRATANTE.');
+  B('**§4°.** O atraso no pagamento de quaisquer valores devidos por este contrato sujeitará a CONTRATANTE à multa moratória de **2% (dois por cento)** sobre o valor em atraso, acrescida de juros de mora de **1% (um por cento) ao mês**, calculados pro rata die, e de correção monetária pelo IPCA, desde o vencimento até o efetivo pagamento.');
+  B('**§5°.** Persistindo o atraso por 3 (três) meses consecutivos, a CONTRATADA poderá rescindir o contrato por motivo justificado, mediante comunicação por escrito, eximindo-se de qualquer responsabilidade a partir da data da rescisão, sem prejuízo da cobrança dos valores em aberto.');
+  if(D.treze){
+    const y=D.primeira?(+D.primeira.slice(5,7)===12?+D.primeira.slice(0,4)+1:+D.primeira.slice(0,4)):today.getFullYear();
+    H('anual','HONORÁRIO ANUAL ADICIONAL');
+    B(`Haverá cobrança adicional anual equivalente a 1 (um) honorário mensal vigente à época, a ser paga até o dia 20 de dezembro de cada ano, sendo a primeira em **dezembro de ${y}**, em razão do acúmulo de serviços de encerramento do exercício, que compreendem:`);
+    const it=[];
+    if(simples)it.push(`Prestação das informações socioeconômicas e fiscais anuais do Simples Nacional no PGDAS-D (que substituem a antiga DEFIS, nos termos da Resolução CGSN n.º 190/2026), incluindo número de empregados, lucro contábil, rendimentos pagos e lucros distribuídos ${F?'à sócia':'ao sócio'} e saldos de caixa e bancos.`);
+    if(mei)it.push('Elaboração e transmissão da Declaração Anual do Simples Nacional do Microempreendedor Individual (DASN-SIMEI).');
+    if(pres)it.push('Elaboração e transmissão da Escrituração Contábil Digital (ECD) e da Escrituração Contábil Fiscal (ECF).');
+    if(!mei)it.push(`Encerramento contábil do exercício: Balanço Patrimonial, Demonstração do Resultado, livros Diário e Razão, e apuração do lucro passível de distribuição com isenção ${F?'à sócia':'ao sócio'}.`);
+    it.push('Folha de pagamento do 13º salário e respectivos encargos, havendo empregados, e conferência anual dos eventos do eSocial e da EFD-Reinf.');
+    it.push(mei?'Emissão do informe de rendimentos do titular e dos empregados, para fins de Declaração de Imposto de Renda da Pessoa Física.':`Emissão dos informes de rendimentos ${socTxt} (pró-labore e lucros) e dos empregados, para fins de Declaração de Imposto de Renda da Pessoa Física.`);
+    it.push(mei?'Planejamento para o exercício seguinte, incluindo análise do limite de faturamento e da conveniência de permanência no MEI.':`Planejamento tributário para o exercício seguinte${simples&&D.fatorR?', incluindo simulação do Fator R':''} e análise da opção pelo regime de tributação no mês de janeiro.`);
+    it.forEach((t,i)=>B(`{#anual}.${i+1} ${t}`));
+  }
+  const yr=D.primeira?+D.primeira.slice(0,4)+1:today.getFullYear()+1;
+  H('reajuste','REAJUSTE DOS HONORÁRIOS');
+  B(`Os honorários serão reajustados anualmente, no mês de janeiro, pela variação do IPCA acumulado nos 12 (doze) meses anteriores, sendo o primeiro reajuste em **janeiro de ${yr}**.`);
+  B('**§1°.** Além da correção pelo índice, a CONTRATADA poderá propor revisão dos honorários com base em análise financeira dos custos de prestação do serviço (mão de obra, sistemas, certificados, volume de documentos e obrigações), apresentada por escrito à CONTRATANTE com antecedência mínima de 30 (trinta) dias. Não havendo acordo, qualquer das partes poderá rescindir o contrato sem a multa prevista no §1° da Cláusula {#vigencia}.');
+  B('**§2°.** A ampliação ou modificação dos serviços contratados, fora das hipóteses de valores já fixados neste contrato, será objeto de proposta prévia e dependerá da concordância entre as partes.');
+  H('nfse','EMISSÃO DE NOTA FISCAL DE SERVIÇOS');
+  B('A CONTRATADA emitirá a Nota Fiscal de Serviços Eletrônica — NFS-e mensalmente, até o 5° (quinto) dia útil do mês subsequente ao recebimento dos honorários, com período de competência correspondente ao mês do recebimento, nos termos da legislação municipal aplicável.');
+  H('acesso','ACESSO A SISTEMAS E PROCURAÇÃO ELETRÔNICA');
+  B(`A CONTRATANTE autoriza expressamente a CONTRATADA a acessar, em seu nome, os sistemas e portais das autoridades fiscais necessários ao cumprimento das obrigações contratadas, incluindo, sem limitação: e-CAC, ${mei?'Portal do Empreendedor, PGMEI':'PGDAS-D, Portal do Simples Nacional'}, SEFAZ/MS, ${D.municipio?`portal da Prefeitura Municipal de ${D.municipio} (NFS-e e ISS), `:''}eSocial, INSS/Meu INSS, e, ${emp?'':'havendo empregados registrados, '}o FGTS Digital, além das demais plataformas governamentais pertinentes.`);
+  B('**PARÁGRAFO ÚNICO.** O acesso se dará mediante procuração eletrônica outorgada no e-CAC ou por outros meios disponibilizados pelos órgãos competentes, não implicando responsabilidade da CONTRATADA por decisões administrativas, comerciais ou operacionais de responsabilidade da CONTRATANTE.');
+  H('obrigContratada','OBRIGAÇÕES DA CONTRATADA');
+  B('A CONTRATADA assume a responsabilidade técnica pelos serviços a que se obrigou, entregando em tempo hábil:');
+  L('Documentos necessários para que a CONTRATANTE efetue os devidos pagamentos e recolhimentos obrigatórios.');
+  L('Comprovantes de entrega das obrigações acessórias.');
+  B('**PARÁGRAFO ÚNICO.** As multas decorrentes de entrega fora do prazo ou de imperfeição dos serviços por parte da CONTRATADA serão de sua responsabilidade, exceto quando decorrentes de atraso na entrega de documentos ou de informações incorretas fornecidas pela CONTRATANTE.');
+  H('obrigContratante','OBRIGAÇÕES DA CONTRATANTE');
+  B('A CONTRATANTE deverá disponibilizar à CONTRATADA, mensalmente, toda a documentação fiscal, contábil e de pessoal até o dia 02 do mês subsequente. O envio fora desse prazo poderá comprometer o cumprimento das obrigações legais, ficando a CONTRATADA isenta de responsabilidade por eventuais multas decorrentes do atraso.');
+  B('**§1°.** A CONTRATANTE deverá comunicar à CONTRATADA, em até 5 (cinco) dias úteis, qualquer alteração cadastral relevante, incluindo mudança de endereço, inclusão ou saída de sócios, alteração de atividades, contratação ou demissão de funcionários e alterações de regime tributário.');
+  B('**§2°.** A CONTRATANTE responsabiliza-se pela guarda e conservação de todos os documentos originais.');
+  B('**§3°.** A CONTRATANTE declara ter ciência da Lei n.º 9.613/1998, alterada pela Lei n.º 12.683/2012, que trata dos crimes de lavagem de dinheiro, e dos procedimentos a serem observados pelos profissionais e organizações contábeis, regulamentados pela Resolução CFC n.º 1.721/2024.');
+  if(!mei)B('**§4°.** Antes do encerramento do exercício social, a CONTRATANTE fornecerá à CONTRATADA a Carta de Responsabilidade da Administração.');
+  H('cadastral','ATUALIZAÇÃO CADASTRAL');
+  B('A CONTRATANTE é responsável por manter seus dados cadastrais atualizados perante todos os órgãos competentes (Receita Federal, Junta Comercial, Prefeitura, SEFAZ e demais). A CONTRATADA poderá, mediante autorização expressa, providenciar as atualizações necessárias, sendo os eventuais custos de registro repassados à CONTRATANTE.');
+  B('**PARÁGRAFO ÚNICO.** A omissão de informações que resulte em autuação, multa ou irregularidade fiscal é de exclusiva responsabilidade da CONTRATANTE.');
+  H('naoIncl','SERVIÇOS NÃO INCLUÍDOS NOS HONORÁRIOS MENSAIS');
+  B('Não estão incluídos nos honorários mensais, sendo cobrados separadamente mediante proposta prévia:');
+  const ni=['Parcelamentos de débitos fiscais e previdenciários.','Defesas administrativas e recursos em processos fiscais.','Atendimento a fiscalizações, auditorias e diligências, cobrado de acordo com a complexidade.','Alterações contratuais futuras, abertura ou encerramento de filiais.','Regularizações fiscais retroativas.',`Declaração de Imposto de Renda da Pessoa Física (DIRPF) ${F?'da sócia':'do sócio'}.`,'Emissão de certidões avulsas e consultoria tributária fora da rotina mensal.'];
+  if(D.assist)ni.push('Assistência técnica pericial, nos termos da Cláusula {#assist}.');
+  ni.push('Quaisquer outros serviços fora da rotina contábil mensal.');
+  ni.forEach((t,i)=>B(`{#naoIncl}.${i+1} ${t}`));
+  H('retrabalho','COBRANÇA POR RETRABALHO');
+  B('Considera-se retrabalho toda solicitação de alteração, correção, cancelamento ou reprocessamento de informações já enviadas, apuradas ou transmitidas, quando decorrente de erro, omissão, envio fora do prazo ou alteração de dados pela CONTRATANTE. Nesses casos, serão cobrados valores adicionais mínimos de:');
+  L('Ajustes simples e correções pontuais: a partir de R$ 30,00.');
+  L('Cancelamento ou substituição de notas fiscais por erro de informação: a partir de R$ 20,00 por evento.');
+  L('Reprocessamentos fiscais ou contábeis: a partir de R$ 150,00.');
+  L('Reabertura de folha de pagamento: a partir de R$ 150,00.');
+  H('semMov','EMPRESA SEM MOVIMENTO');
+  B('A ausência de transação financeira ou operacional da empresa não suspende as obrigações fiscais. Assim, os honorários contábeis permanecerão devidos enquanto a empresa estiver ativa e o contrato vigente.');
+  if(D.assist){
+    H('assist','ASSISTÊNCIA TÉCNICA PERICIAL');
+    B('Na hipótese de a CONTRATANTE ser parte em processo judicial ou procedimento extrajudicial que demande prova pericial contábil, a CONTRATADA poderá atuar como sua assistente técnica, mediante proposta específica de honorários, cobrados separadamente e de forma independente deste contrato.');
+    B('**PARÁGRAFO ÚNICO.** Em razão da relação de prestação de serviços estabelecida neste contrato, a CONTRATADA não aceitará nomeação como perita do juízo em processos que envolvam a CONTRATANTE, observadas as hipóteses de impedimento e suspeição previstas nos arts. 144, 145 e 148 do Código de Processo Civil.');
+  }
+  H('protesto','COBRANÇA E PROTESTO');
+  B('Em caso de inadimplência, a CONTRATADA poderá cobrar por meio administrativo ou judicial, inclusive mediante protesto do contrato ou título em cartório, ficando a CONTRATANTE responsável pelos custos e despesas decorrentes.');
+  H('respInfo','RESPONSABILIDADE PELAS INFORMAÇÕES');
+  B('Todas as informações e documentos fornecidos pela CONTRATANTE são de sua inteira responsabilidade quanto à veracidade e legalidade. A CONTRATADA não se responsabiliza por erros ou irregularidades decorrentes de informações incorretas ou omitidas pela CONTRATANTE.');
+  H('omissao','OMISSÃO DE RECEITAS OU IRREGULARIDADES');
+  B('Caso sejam identificadas irregularidades fiscais ou omissão de receitas, a CONTRATADA notificará a CONTRATANTE para regularização. Persistindo a irregularidade, a CONTRATADA poderá rescindir o contrato, sem prejuízo das comunicações obrigatórias previstas na Lei n.º 9.613/1998 e na Resolução CFC n.º 1.721/2024.');
+  H('funcionarios','CONTRATAÇÃO DE FUNCIONÁRIOS');
+  B('A CONTRATANTE deverá comunicar previamente qualquer contratação de funcionários. A CONTRATADA não se responsabiliza por encargos ou prejuízos decorrentes de contratações realizadas sem comunicação prévia.');
+  H('limite','LIMITAÇÃO DE RESPONSABILIDADE');
+  B('A responsabilidade profissional da CONTRATADA limita-se aos serviços efetivamente prestados, não abrangendo prejuízos decorrentes de decisões administrativas, comerciais ou operacionais da CONTRATANTE.');
+  H('sigilo','SIGILO PROFISSIONAL E CONFIDENCIALIDADE');
+  B('A CONTRATADA guardará sigilo sobre todas as informações, documentos e dados da CONTRATANTE a que tiver acesso em razão deste contrato, nos termos do Código de Ética Profissional do Contador (NBC PG 01), utilizando-os exclusivamente para a execução dos serviços contratados.');
+  let n=1;
+  if(D.saude){
+    B(`**§${n++}°.** As partes reconhecem que os documentos fiscais da CONTRATANTE, em especial as NFS-e emitidas, podem conter nome e CPF de pacientes, e que a própria existência da relação de atendimento${D.atividade?' de '+D.atividade:''} constitui informação sensível. A CONTRATADA restringirá o acesso a esses dados às pessoas estritamente necessárias à execução dos serviços e não os divulgará a terceiros, salvo por obrigação legal ou determinação de autoridade competente.`);
+    B(`**§${n++}°.** A CONTRATANTE compromete-se a enviar à CONTRATADA somente os documentos fiscais, contábeis e de pessoal necessários aos serviços, não devendo encaminhar prontuários, laudos, relatórios ou quaisquer informações clínicas de pacientes.`);
+  }else B(`**§${n++}°.** A CONTRATADA restringirá o acesso às informações da CONTRATANTE, de seus clientes e colaboradores às pessoas estritamente necessárias à execução dos serviços e não as divulgará a terceiros, salvo por obrigação legal ou determinação de autoridade competente.`);
+  B(`**§${n++}°.** A CONTRATANTE, por sua vez, manterá em sigilo as informações técnicas, metodologias, sistemas e condições comerciais da CONTRATADA a que tiver acesso em razão deste contrato.`);
+  B(`**§${n++}°.** As obrigações de sigilo previstas nesta cláusula subsistirão após o encerramento do contrato, por prazo indeterminado.`);
+  const tit=D.saude?'pacientes, colaboradores, clientes e fornecedores':'clientes, colaboradores e fornecedores';
+  H('lgpd','LGPD — LEI GERAL DE PROTEÇÃO DE DADOS');
+  B(`As partes obrigam-se a tratar os dados pessoais envolvidos na execução deste contrato em conformidade com a Lei n.º 13.709/2018 — LGPD, figurando a CONTRATANTE como controladora e a CONTRATADA como operadora dos dados de ${tit} da CONTRATANTE, tratados exclusivamente para o cumprimento de obrigações legais, contábeis, fiscais e trabalhistas.`);
+  B('**§1°.** A CONTRATADA adotará medidas técnicas e administrativas razoáveis de segurança, como controle de acesso, uso de sistemas com autenticação e armazenamento seguro, e comunicará à CONTRATANTE, em até 2 (dois) dias úteis da ciência, qualquer incidente de segurança que possa afetar dados pessoais por ela tratados.');
+  B('**§2°.** Encerrado o contrato, os dados serão devolvidos à CONTRATANTE ou ao profissional por ela indicado, podendo a CONTRATADA conservar apenas o necessário ao cumprimento de obrigações legais e regulatórias, pelo prazo nelas previsto.');
+  B(`**§3°.** A CONTRATANTE declara estar ciente de suas obrigações perante a LGPD em relação a seus ${tit}.`);
+  H('vigencia','VIGÊNCIA E RESCISÃO');
+  B(`Este instrumento é celebrado por prazo indeterminado, com início em ${ctDExt(D.inicio)}, podendo ser rescindido por qualquer das partes mediante aviso prévio de 30 (trinta) dias, por escrito, durante o qual os serviços e os honorários permanecerão devidos.`);
+  B('**§1°.** A parte que rescindir o contrato sem o cumprimento do aviso prévio ficará sujeita ao pagamento de multa compensatória equivalente a 1 (um) honorário mensal vigente à época, correspondente ao período de aviso não cumprido.');
+  B('**§2°.** A rescisão será formalizada por distrato, com especificação da cessação das responsabilidades de cada parte.');
+  B('**§3°.** A CONTRATADA entregará os documentos, livros contábeis e fiscais e/ou arquivos eletrônicos à CONTRATANTE ou a outro profissional de contabilidade por ela indicado, mediante protocolo, no prazo de até 15 (quinze) dias após a rescisão, independentemente da assinatura do distrato.');
+  if(D.prazo)B(`**§4°.** As condições deste instrumento são válidas para assinatura até **${ctDExt(D.prazo)}**. Após essa data, os valores e prazos ficam sujeitos a revisão pela CONTRATADA.`);
+  H('foro','FORO');
+  B('Fica eleito o foro da Comarca de Ivinhema/MS para o exercício e cumprimento dos direitos e obrigações resultantes do presente contrato, com exclusão de qualquer outro.');
+  /* numeração das cláusulas e referências */
+  const num={};let k=0;for(const o of out)if(o.t==='H'){num[o.k]=++k;o.x=`CLÁUSULA ${k} – ${o.x}`}
+  for(const o of out)o.x=o.x.replace(/\{#(\w+)\}/g,(m,key)=>num[key]||'__');
+  return out}
+function ctQualif(D){
+  const F=D.repGenero==='F';
+  return `**${D.razao||'___'}**${D.qualifExtra?', '+D.qualifExtra:''}, com sede na ${D.sede||'___'}, inscrita no CNPJ n.º **${ctFmtDoc(D.cnpj)||'___'}**, representada neste ato por ${F?'sua sócia administradora':'seu sócio administrador'} ${D.repNome||'___'}, ${F?'inscrita':'inscrito'} no CPF n.º **${ctFmtDoc(D.repCpf)||'___'}**, residente e ${F?'domiciliada':'domiciliado'} na ${D.repEnd||'___'}.`}
+
+/* ---------- Word ---------- */
+const CT_PPR={
+  H:'<w:pPr><w:keepNext/><w:pBdr><w:left w:val="single" w:sz="12" w:space="0" w:color="B8962E"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="0D1B3E"/><w:spacing w:before="280" w:after="120"/><w:ind w:left="-142"/></w:pPr>',
+  S:'<w:pPr><w:keepNext/><w:pBdr><w:top w:val="single" w:sz="6" w:space="0" w:color="B8962E"/><w:bottom w:val="single" w:sz="6" w:space="0" w:color="B8962E"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="0D1B3E"/><w:spacing w:before="240" w:after="120"/><w:ind w:left="-142"/></w:pPr>',
+  B:'<w:pPr><w:spacing w:before="100" w:after="100"/><w:ind w:left="-142"/><w:jc w:val="both"/></w:pPr>',
+  L:'<w:pPr><w:pStyle w:val="PargrafodaLista"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr><w:spacing w:before="60" w:after="60"/><w:ind w:left="-142" w:firstLine="0"/></w:pPr>',
+  Q:'<w:pPr><w:spacing w:before="120" w:after="120"/><w:ind w:left="-142"/><w:jc w:val="both"/></w:pPr>'};
+const ctX=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function ctPara(t,x){
+  const base=(t==='H'||t==='S')?'<w:b/><w:bCs/><w:color w:val="FFFFFF"/>':'';
+  const runs=String(t==='L'?'  '+x:x).split('**').map((seg,i)=>{if(!seg)return '';const rp=base+(i%2&&!base?'<w:b/><w:bCs/>':'');
+    return `<w:r>${rp?`<w:rPr>${rp}</w:rPr>`:''}<w:t xml:space="preserve">${ctX(seg)}</w:t></w:r>`}).join('');
+  return `<w:p>${CT_PPR[t]}${runs}</w:p>`}
+function ctAssin(D){
+  const F=D.repGenero==='F';
+  const p=(t,b,after=20)=>`<w:p><w:pPr><w:keepNext/><w:spacing w:before="0" w:after="${after}"/><w:jc w:val="center"/></w:pPr><w:r><w:rPr>${b?'<w:b/><w:bCs/>':''}<w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr><w:t xml:space="preserve">${ctX(t)}</w:t></w:r></w:p>`;
+  const cell=L=>`<w:tc><w:tcPr><w:tcW w:w="5100" w:type="dxa"/></w:tcPr>${p('________________________________',false,40)}${L.map(([t,b])=>p(t,b)).join('')}</w:tc>`;
+  const nb='<w:tblBorders>'+['top','left','bottom','right','insideH','insideV'].map(k=>`<w:${k} w:val="nil"/>`).join('')+'</w:tblBorders>';
+  return ctPara('B','')+ctPara('B','E por estarem assim acordadas, as partes firmam o presente instrumento por meio eletrônico, na plataforma Autentique, reconhecendo a validade das assinaturas eletrônicas nos termos da Medida Provisória n.º 2.200-2/2001 e da Lei n.º 14.063/2020, dispensada a assinatura de testemunhas, conforme o art. 784, §4º, do Código de Processo Civil, obrigando-se a cumpri-lo em todos os seus termos.')
+   +'<w:p><w:pPr><w:keepNext/><w:spacing w:before="100" w:after="100"/><w:ind w:left="-142"/><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">Ivinhema/MS, na data da última assinatura eletrônica.</w:t></w:r></w:p>'
+   +'<w:p><w:pPr><w:keepNext/><w:spacing w:before="600" w:after="0"/></w:pPr></w:p>'
+   +`<w:tbl><w:tblPr><w:tblW w:w="10200" w:type="dxa"/><w:jc w:val="center"/>${nb}<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="5100"/><w:gridCol w:w="5100"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr>`
+   +cell([[D.razao||'___',true],['CNPJ '+(ctFmtDoc(D.cnpj)||'___'),false],[D.repNome||'___',true],[F?'Sócia Administradora':'Sócio Administrador',false],['CONTRATANTE',true]])
+   +cell([['JM GESTÃO CONTÁBIL E PERÍCIAS LTDA',true],['CNPJ 64.211.255/0001-86 · CRC MS-002278/O',false],['José Marciel dos Santos de Oliveira',true],['Sócio Administrador – Contador',false],['CRC MS-015831/O-0',false],['CONTRATADA',true]])
+   +'</w:tr></w:tbl><w:p><w:pPr><w:spacing w:after="0"/></w:pPr></w:p>'}
+async function ctDocx(D){
+  if(typeof JSZip==='undefined'){toast('O gerador ainda está carregando. Tente de novo em alguns segundos.');return}
+  const zip=await JSZip.loadAsync(CT_TPL,{base64:true});
+  let x=await zip.file('word/document.xml').async('string');
+  x=x.replace('{{QUALIF}}',()=>ctPara('Q',ctQualif(D))).replace('{{CORPO}}',()=>ctItens(D).map(o=>ctPara(o.t,o.x)).join('')+ctAssin(D));
+  zip.file('word/document.xml',x);
+  const blob=await zip.generateAsync({type:'blob',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',compression:'DEFLATE'});
+  const nome=String(D.razao||'cliente').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,40);
+  return baixar(`Contrato_${nome}_${todayISO}.docx`,blob)}
+
+/* ---------- telas ---------- */
+function vContratos(){
+  if(!LOADED.has('financeiro'))return ph('Contratos','Carregando…');
+  const L=ctLista(),f=S.ctSt?L.filter(x=>x.status===S.ctSt):L.filter(x=>x.status!=='Encerrado');
+  const ord=[...f].sort((a,b)=>CT_ST.indexOf(a.status)-CT_ST.indexOf(b.status)||String(a.razao).localeCompare(String(b.razao),'pt-BR'));
+  const cnt=s=>L.filter(x=>x.status===s).length;
+  const prazoVenc=x=>(x.status==='Rascunho'||x.status==='Enviado')&&x.prazo&&x.prazo<todayISO;
+  const nV=L.filter(prazoVenc).length;
+  return ph('Contratos','Contratos de prestação de serviços: geração, status e reajustes',`<button class="btn" data-act="ctPrecos">${ic('percent')}Tabela de preços</button><button class="btn primary" data-act="ctNovo">${ic('plus')}Novo contrato</button>`)
+  +`<div class="bar-tools"><div class="subtabs" role="group">${[['','Em andamento'],...CT_ST.map(s=>[s,s])].map(([v,n])=>`<button data-act="ctSt" data-v="${v}" aria-pressed="${S.ctSt===v}">${n}${v&&cnt(v)?` (${cnt(v)})`:''}</button>`).join('')}</div></div>`
+  +(nV?`<p class="hint" style="color:var(--neg)">${nV} contrato(s) com prazo de assinatura vencido.</p>`:'')
+  +(ord.length?`<div class="tscroll"><table class="cards"><thead><tr><th class="l">Contratante</th><th class="l">Status</th><th>Honorário</th><th>Início</th><th>1ª mensalidade</th><th>Próx. reajuste</th><th></th></tr></thead><tbody>
+  ${ord.map(x=>`<tr class="row" data-act="ctEdit" data-id="${esc(x.id)}" tabindex="0"><td><span class="lname">${esc(x.razao||'(sem nome)')}</span><div class="muted" style="font-size:12px">${esc(x.regime||'')}${x.cnpj?' · '+esc(ctFmtDoc(x.cnpj)):''}</div></td>
+    <td class="l" data-l="Status"><span class="chip ${CT_CHIP[x.status]||'man'}" style="margin-left:0">${esc(x.status)}</span>${prazoVenc(x)?'<span class="chip fora">prazo vencido</span>':x.prazo&&(x.status==='Rascunho'||x.status==='Enviado')?`<div class="muted" style="font-size:12px">assinar até ${ctDBR(x.prazo)}</div>`:''}${x.status==='Assinado'&&x.assinadoEm?`<div class="muted" style="font-size:12px">em ${ctDBR(x.assinadoEm)}</div>`:''}</td>
+    <td data-l="Honorário">${brl2(+x.honorario||0)}</td><td data-l="Início" class="muted">${ctDBR(x.inicio)||'—'}</td><td data-l="1ª mensalidade" class="muted">${ctDBR(x.primeira)||'—'}</td><td data-l="Próx. reajuste" class="muted">${x.status==='Encerrado'?'—':ctProxReaj(x)||'—'}</td>
+    <td><button class="btn small" data-act="ctGerar" data-id="${esc(x.id)}">${ic('download')}.docx</button></td></tr>`).join('')}
+  </tbody></table></div>`:`<div class="empty"><h2 style="margin:0">Nenhum contrato aqui</h2><p>Clique em "Novo contrato" para montar o primeiro a partir do cadastro do cliente.</p></div>`)}
+
+function ctCampos(D){
+  const cs=clientes().filter(c=>c.status==='Ativo'||c.id===D.clienteId).sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+  const inp=(k,lab,v,tipo='text',extra='')=>`<label>${lab}<input type="${tipo}" data-ck="${k}" value="${esc(v??'')}" ${extra}></label>`;
+  const chk=(k,lab,v)=>`<label style="flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" data-ck="${k}"${v?' checked':''}> ${lab}</label>`;
+  const sec=t=>`<h4 style="margin:18px 0 6px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-fg)">${t}</h4>`;
+  return `${sec('Situação')}<div class="fgrid">
+    <label>Status<select data-ck="status">${CT_ST.map(s=>`<option${s===D.status?' selected':''}>${s}</option>`).join('')}</select></label>
+    ${inp('prazo','Assinar até (opcional)',D.prazo,'date')}
+    ${D.status!=='Rascunho'?inp('enviadoEm','Enviado em',D.enviadoEm,'date'):''}
+    ${D.status==='Assinado'||D.status==='Encerrado'?inp('assinadoEm','Assinado em',D.assinadoEm,'date'):''}
+    ${D.status==='Encerrado'?inp('encerradoEm','Encerrado em',D.encerradoEm,'date'):''}
+  </div>
+  ${sec('Contratante')}<div class="fgrid">
+    <label style="grid-column:1/-1">Cliente do cadastro<select data-ck="clienteId"><option value="">— cliente ainda não cadastrado —</option>${cs.map(c=>`<option value="${esc(c.id)}"${c.id===D.clienteId?' selected':''}>${esc(c.nome)}</option>`).join('')}</select></label>
+    ${inp('razao','Razão social',D.razao)}${inp('cnpj','CNPJ',D.cnpj)}
+    <label style="grid-column:1/-1">Situação do registro (opcional, entra após o nome)<input type="text" data-ck="qualifExtra" value="${esc(D.qualifExtra||'')}" placeholder="ex.: nome empresarial aprovado em consulta de viabilidade, em processo de constituição"></label>
+    <label style="grid-column:1/-1">Endereço da sede<input type="text" data-ck="sede" value="${esc(D.sede||'')}" placeholder="Rua..., n.º ..., Bairro ..., Cidade/MS – CEP ..."></label>
+    ${inp('municipio','Município (portal da NFS-e)',D.municipio,'text','placeholder="ex.: Nova Andradina"')}
+  </div>
+  ${sec('Representante')}<div class="fgrid">
+    ${inp('repNome','Nome',D.repNome)}${inp('repCpf','CPF',D.repCpf)}
+    <label>Tratamento<select data-ck="repGenero"><option value="F"${D.repGenero==='F'?' selected':''}>Sócia (feminino)</option><option value="M"${D.repGenero!=='F'?' selected':''}>Sócio (masculino)</option></select></label>
+    <label style="grid-column:1/-1">Endereço residencial<input type="text" data-ck="repEnd" value="${esc(D.repEnd||'')}"></label>
+  </div>
+  ${sec('Atividade e escopo')}<div class="fgrid">
+    <label>Regime<select data-ck="regime">${REGIMES.map(r=>`<option${r===D.regime?' selected':''}>${r}</option>`).join('')}</select></label>
+    ${inp('atividade','Atividade (opcional)',D.atividade,'text','placeholder="ex.: psicologia, serviços com drones"')}
+    ${inp('empregados','Empregados incluídos no honorário',D.empregados,'number','min="0"')}
+  </div><div style="display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:8px">
+    ${chk('comercio','Comércio (ICMS / SEFAZ)',D.comercio)}${D.regime==='Simples Nacional'?chk('fatorR','Acompanhamento do Fator R',D.fatorR):''}${chk('saude','Dados de saúde de pacientes (sigilo reforçado)',D.saude)}${chk('assist','Cláusula de assistência técnica pericial',D.assist)}${chk('treze','Honorário anual adicional (dezembro)',D.treze)}
+  </div>
+  ${sec('Honorários')}<div class="fgrid">
+    <label>Honorário mensal (R$)<input type="text" inputmode="decimal" data-ck="honorario" value="${numIn(D.honorario)}"></label>
+    <div class="fl">Sugestão pela tabela<div id="ctSug" style="display:flex;gap:8px;align-items:center;min-height:36px;color:var(--fg);font-weight:400">${ctSugHtml(D)}</div></div>
+    ${inp('diaVenc','Dia de vencimento',D.diaVenc,'number','min="1" max="28"')}
+    <label>Adicional por empregado (R$)<input type="text" inputmode="decimal" data-ck="adicEmp" value="${numIn(D.adicEmp)}"></label>
+    ${inp('inicio','Início da vigência',D.inicio,'date')}${inp('primeira','Vencimento da 1ª mensalidade',D.primeira,'date')}
+    <label style="grid-column:1/-1">Cortesia (opcional)<input type="text" data-ck="cortesia" value="${esc(D.cortesia||'')}" placeholder="ex.: dezembro de 2026"></label>
+  </div>
+  ${sec('Serviços avulsos')}<div style="display:flex;flex-wrap:wrap;gap:6px 18px">${chk('inicial.on','Serviço inicial (abertura, transformação…)',D.inicial?.on)}${chk('dasn.on','DASN-SIMEI cobrada à parte',D.dasn?.on)}</div>
+  ${D.inicial?.on?`<div class="fgrid" style="margin-top:6px"><label style="grid-column:1/-1">Descrição do serviço inicial<input type="text" data-ck="inicial.desc" value="${esc(D.inicial.desc||'')}"></label><label>Valor (R$) — 50% entrada, 50% após JUCEMS<input type="text" inputmode="decimal" data-ck="inicial.valor" value="${numIn(D.inicial.valor)}"></label></div>`:''}
+  ${D.dasn?.on?`<div class="fgrid" style="margin-top:6px"><label>Valor da DASN (R$)<input type="text" inputmode="decimal" data-ck="dasn.valor" value="${numIn(D.dasn.valor)}"></label>${inp('dasn.venc','Vencimento',D.dasn.venc,'date')}</div>`:''}
+  ${sec('Anotações internas')}<textarea data-ck="obs" rows="2" style="width:100%;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:6px 10px;font:inherit;color:var(--ink)">${esc(D.obs||'')}</textarea>
+  <div id="ctFalt">${ctFaltHtml(D)}</div>
+  <details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Prévia das cláusulas</summary><div id="ctPrev" style="font-size:13px;line-height:1.5;margin-top:8px;max-height:50vh;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:10px 14px">${ctPrevHtml(D)}</div></details>`}
+const ctSugHtml=D=>{const sug=ctSugestao(D);return `<b>${brl2(sug)}</b>${sug&&r2(sug)!==r2(+D.honorario||0)?`<button type="button" class="btn small" data-ctusar>Usar</button>`:''}`};
+const ctFaltHtml=D=>{const f=ctFaltas(D);return f.length?`<p class="hint" style="color:var(--neg)">Falta preencher: ${f.join(', ')}.</p>`:'<p class="hint">Tudo preenchido para gerar o contrato.</p>'};
+const ctPrevHtml=D=>`<p>${ctHtml(ctQualif(D))}</p>`+ctItens(D).map(o=>o.t==='H'?`<p style="margin:14px 0 4px;font-weight:700;background:#0D1B3E;color:#fff;padding:3px 8px">${esc(o.x)}</p>`:o.t==='S'?`<p style="margin:10px 0 4px;font-weight:700">${esc(o.x)}</p>`:o.t==='L'?`<p style="margin:2px 0 2px 14px">• ${ctHtml(o.x)}</p>`:`<p style="margin:4px 0;text-align:justify">${ctHtml(o.x)}</p>`).join('');
+const ctHtml=s=>esc(s).split('**').map((x,i)=>i%2?`<b>${x}</b>`:x).join('');
+
+function ctAbrir(id,base){
+  const c0=id?ctById(id):null;
+  const D=c0?JSON.parse(JSON.stringify(c0)):(base||ctNovo());
+  const ver=()=>{const b=dlg.querySelector('.dbody');const sc=b?b.scrollTop:0;const det=dlg.querySelector('details')?.open;
+    dlg.innerHTML=`<div class="dhead"><div><h3>${c0?esc(c0.razao||'Contrato'):'Novo contrato'}</h3><div class="muted" style="font-size:13px">${esc(D.status)}${c0?.criado?` · criado em ${ctDBR(c0.criado)}`:''}</div></div><button class="x" data-close aria-label="Fechar">×</button></div>
+    <div class="dbody">${ctCampos(D)}</div>
+    <div class="dfoot"><span style="display:flex;gap:8px;flex-wrap:wrap">${c0?'<button class="btn danger" data-ctdel>Excluir</button><button class="btn" data-ctdup>Duplicar</button>':''}</span><span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-close>Cancelar</button><button class="btn" data-ctdoc>${ic('download')}Salvar e gerar .docx</button><button class="btn primary" data-ctsave>Salvar</button></span></div>`;
+    const nb=dlg.querySelector('.dbody');if(nb)nb.scrollTop=sc;if(det){const d=dlg.querySelector('details');if(d)d.open=true}};
+  const set=(k,v)=>{const ps=k.split('.');let o=D;for(const p of ps.slice(0,-1)){o[p]=o[p]||{};o=o[p]}o[ps[ps.length-1]]=v};
+  const NUMS=new Set(['honorario','adicEmp','inicial.valor','dasn.valor']),INTS=new Set(['diaVenc','empregados']);
+  const ler=e=>{const k=e.target.dataset.ck;if(!k)return null;let v=e.target.type==='checkbox'?e.target.checked:e.target.value;
+    if(NUMS.has(k))v=ctNum(v);else if(INTS.has(k))v=v===''?'':Math.max(0,parseInt(v,10)||0);set(k,v);return k};
+  let tAt=null;const atual=()=>{clearTimeout(tAt);tAt=setTimeout(()=>{const q=id=>dlg.querySelector('#'+id);if(q('ctSug'))q('ctSug').innerHTML=ctSugHtml(D);if(q('ctFalt'))q('ctFalt').innerHTML=ctFaltHtml(D);if(q('ctPrev'))q('ctPrev').innerHTML=ctPrevHtml(D)},250)};
+  const REDES=new Set(['status','clienteId','regime','repGenero','inicial.on','dasn.on','comercio','fatorR','saude','assist','treze']);
+  dlg.oninput=e=>{if(e.target.type!=='checkbox'&&e.target.tagName!=='SELECT'&&ler(e))atual()};
+  dlg.onchange=e=>{const k=ler(e);if(!k)return;
+    if(!REDES.has(k)){if(k==='razao'){D.razao=String(D.razao||'').toUpperCase();e.target.value=D.razao}atual();return}
+    if(k==='clienteId'){const c=cliById(D.clienteId);if(c){ctPreencher(D,c);if(+c.honorario_mensal>0)D.honorario=+c.honorario_mensal;D.fatorR=D.regime==='Simples Nacional'}}
+    if(k==='status'){if(D.status==='Enviado'&&!D.enviadoEm)D.enviadoEm=todayISO;if(D.status==='Assinado'&&!D.assinadoEm)D.assinadoEm=todayISO;if(D.status==='Encerrado'&&!D.encerradoEm)D.encerradoEm=todayISO}
+    if(k==='regime'&&D.regime!=='Simples Nacional')D.fatorR=false;
+    if(k==='comercio'&&D.comercio)D.fatorR=false;
+    if(k==='dasn.on'&&D.dasn.on&&!D.dasn.venc)D.dasn.venc=(today.getMonth()<2?today.getFullYear():today.getFullYear()+1)+'-03-10';
+    ver()};
+  const gravar=()=>{D.razao=String(D.razao||'').trim().toUpperCase();if(!D.razao&&!D.clienteId){toast('Informe a razão social ou escolha o cliente');return false}
+    D.atualizado=new Date().toISOString();const L=ctLista().filter(x=>x.id!==D.id);L.push(JSON.parse(JSON.stringify(D)));return ctGravar(L)};
+  dlg.onclick=async e=>{
+    if(e.target===dlg||e.target.closest('[data-close]')){dlg.close();return}
+    if(e.target.closest('[data-ctusar]')){D.honorario=ctSugestao(D);const h=dlg.querySelector('[data-ck="honorario"]');if(h)h.value=numIn(D.honorario);atual();return}
+    if(e.target.closest('[data-ctdel]')){if(confirm(`Excluir o contrato de "${c0.razao}"? Esta ação não gera arquivo nenhum, só tira o registro do sistema.`)){ctGravar(ctLista().filter(x=>x.id!==c0.id));dlg.close();render();toast('Contrato excluído')}return}
+    if(e.target.closest('[data-ctdup]')){const n=JSON.parse(JSON.stringify(D));Object.assign(n,{id:uid('k'),status:'Rascunho',criado:todayISO,clienteId:'',razao:'',cnpj:'',sede:'',repNome:'',repCpf:'',repEnd:'',qualifExtra:'',enviadoEm:'',assinadoEm:'',encerradoEm:'',prazo:'',obs:''});dlg.close();ctAbrir(null,n);toast('Cópia criada: preencha os dados do novo contratante');return}
+    if(e.target.closest('[data-ctsave]')){if(gravar()){dlg.close();render();toast('Contrato salvo')}return}
+    if(e.target.closest('[data-ctdoc]')){const f=ctFaltas(D);if(f.length&&!confirm(`Ainda falta: ${f.join(', ')}.\n\nGerar assim mesmo? Os campos vazios saem como "___".`))return;
+      if(!gravar())return;dlg.close();render();if(await ctDocx(D))toast('Contrato salvo e .docx gerado');return}
+  };
+  ver();dlg.showModal()}
+
+function ctAbrirPrecos(){
+  const P=ctPrecos();
+  const ver=()=>{dlg.innerHTML=`<div class="dhead"><div><h3>Tabela de preços</h3><div class="muted" style="font-size:13px">Base da sugestão de honorário nos contratos</div></div><button class="x" data-close aria-label="Fechar">×</button></div>
+  <div class="dbody"><table class="cards"><thead><tr><th class="l">Regime</th><th>Honorário base (R$)</th><th>Média da carteira hoje</th></tr></thead><tbody>
+  ${REGIMES.map(g=>{const m=ctMedia(g);return `<tr><td class="l">${esc(g)}</td><td><input type="text" inputmode="decimal" data-pr="${esc(g)}" value="${numIn(P.regimes[g])}" style="width:110px;text-align:right"></td><td class="muted">${m.n?`${brl2(m.v)} <span style="font-size:12px">(${m.n} cliente${m.n>1?'s':''})</span>`:'—'}</td></tr>`}).join('')}
+  </tbody></table>
+  <div class="fgrid" style="margin-top:14px">
+    <label>Adicional por empregado (R$)<input type="text" inputmode="decimal" data-pk="empregado" value="${numIn(P.empregado)}"></label>
+    <label>Adicional para comércio (R$)<input type="text" inputmode="decimal" data-pk="comercio" value="${numIn(P.comercio)}"></label>
+    <label>Adicional área da saúde (R$)<input type="text" inputmode="decimal" data-pk="saude" value="${numIn(P.saude)}"></label>
+    <label>Serviço inicial padrão (R$)<input type="text" inputmode="decimal" data-pk="inicial" value="${numIn(P.inicial)}"></label>
+    <label>DASN-SIMEI avulsa (R$)<input type="text" inputmode="decimal" data-pk="dasn" value="${numIn(P.dasn)}"></label>
+  </div>
+  <p class="hint">Sugestão = base do regime + adicional por empregado × empregados incluídos + adicionais marcados no contrato. A média da carteira usa os honorários dos clientes ativos de cada regime.</p></div>
+  <div class="dfoot"><span></span><span style="display:flex;gap:8px"><button class="btn" data-close>Cancelar</button><button class="btn primary" data-save>Salvar</button></span></div>`};
+  dlg.oninput=dlg.onchange=e=>{const t=e.target;if(t.dataset.pr)P.regimes[t.dataset.pr]=ctNum(t.value);if(t.dataset.pk)P[t.dataset.pk]=ctNum(t.value)};
+  dlg.onclick=e=>{if(e.target===dlg||e.target.closest('[data-close]')){dlg.close();return}
+    if(e.target.closest('[data-save]')){if(ctGravar(null,P)){dlg.close();render();toast('Tabela de preços salva')}}};
+  ver();dlg.showModal()}
+
+main.addEventListener('click',async e=>{const b=e.target.closest('[data-act]');if(!b||S.tab!=='contratos')return;const a=b.dataset.act;
+  if(a==='ctNovo'){ctAbrir(null)}
+  else if(a==='ctPrecos'){ctAbrirPrecos()}
+  else if(a==='ctSt'){S.ctSt=b.dataset.v;render()}
+  else if(a==='ctGerar'){e.stopPropagation();const x=ctById(b.dataset.id);if(x){const f=ctFaltas(x);if(f.length&&!confirm(`Ainda falta: ${f.join(', ')}.\n\nGerar assim mesmo? Os campos vazios saem como "___".`))return;await ctDocx(x)}}
+  else if(a==='ctEdit'){ctAbrir(b.dataset.id)}});
+main.addEventListener('keydown',e=>{if(S.tab!=='contratos'||e.key!=='Enter')return;const r=e.target.closest&&e.target.closest('tr[data-act="ctEdit"]');if(r)ctAbrir(r.dataset.id)});
+}
 </script><script type="text/plain" id="jmloader">(async()=>{
   /* sistema único: o dono vê tudo; quem foi convidado entra no modo equipe (sem valores) */
   const main=document.querySelector('main');
