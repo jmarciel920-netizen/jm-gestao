@@ -1969,6 +1969,7 @@ function recorrentesPorGrupo(tipo){
   for(const m of allMovs()){
     if(m.tipo!==tipo)continue;
     if(tipo==='Receita'&&clienteDe(m)&&isHon(m.grupo))continue; // honorários vêm do cadastro dos clientes
+    if(tipo==='Despesa'&&catDe('Despesa',m.grupo||'')==='dest')continue; // distribuição de lucros, investimentos e reservas não são despesa
     const k=key(m);if(!G.has(k))G.set(k,[]);G.get(k).push(m)}
   const out=[];
   /* séries importadas que vão até o último mês lançado no sistema continuam depois dele (não têm fim de verdade) */
@@ -2086,6 +2087,7 @@ function vSimMes(P){
     ${temC?stat('Crescimento representa',brlK((tot('recG')-tot('recA'))-(tot('desG')-tot('desA'))),`no resultado, em ${rotAnos}`,'percent','p'):stat('Efeito do reajuste no resultado',brlK(tot('resA')-tot('res')),'receitas menos despesas','percent','p',tot('resA')<tot('res')?'neg':'')}
     ${stat(temC?'Resultado com reajuste e crescimento':'Resultado com reajuste',brlK(tot(temC?'resG':'resA')),`sem reajuste: ${brlK(tot('res'))}`,'target','i',tot(temC?'resG':'resA')<0?'neg':'')}
   </section>
+  ${simAnalise(P)}
   <div class="panel"><h3>Ajustar receitas e despesas da simulação</h3>
     <p class="hint" style="margin:0 0 10px">Os ajustes valem só para esta simulação e não mudam os lançamentos nem o cadastro. Para trocar valores, marque "Detalhar por cliente e por lançamento" e digite nas células (apague para voltar ao calculado); o × tira uma linha inteira.</p>
     <div class="params" style="align-items:end">
@@ -2111,6 +2113,85 @@ function simMesXls(){
     add('Despesas recorrentes sem reajuste',r.des);r.desp.forEach(l=>add('  '+l.nome,l.pA));add(`Despesas com reajuste de ${P.rDesp}%`,r.desA);if(+P.cDesp)add(`Despesas com crescimento de ${P.cDesp}% ao mês`,r.desG);
     add('Resultado sem reajuste',r.res);add('Resultado com reajuste',r.resA);if(+P.cRec||+P.cDesp)add('Resultado com reajuste e crescimento',r.resG);return[String(a),rows]});
   baixar(`Projecao-mensal-${P.anosSel.join('-')}-${carimbo()}.xlsx`,xlsxBlob(abas)).then(ok=>ok&&toast('Planilha gerada'));
+}
+/* ---- análise da projeção: onde melhorar receitas e despesas ---- */
+function simAnalise(P){
+  const de=P.aDe||addMonths(curYM+'-01',1).slice(0,7),ate=P.aAte&&P.aAte>=de?P.aAte:addMonths(de+'-01',11).slice(0,7);
+  const ya=+de.slice(0,4),yb=+ate.slice(0,4),anos=[];for(let y=ya;y<=yb;y++)anos.push(y);
+  const C=simCalc({...P,anosSel:anos}),yms=ymList(ya,yb).filter(ym=>ym>=de&&ym<=ate),n=yms.length;
+  const T=l=>r2(yms.reduce((s,ym)=>s+(l.vA[ym]||0),0));
+  const L=C.linhas.filter(l=>!l.fora).map(l=>({...l,tot:T(l)})).filter(l=>l.tot);
+  const rec=L.filter(l=>l.tipo==='R'),des=L.filter(l=>l.tipo==='D');
+  const tR=r2(rec.reduce((s,l)=>s+l.tot,0)),tD=r2(des.reduce((s,l)=>s+l.tot,0)),res=r2(tR-tD),marg=tR?res/tR:0;
+  const meta=(+P.aMeta||30)/100;
+  /* clientes: honorário no primeiro mês do período e regime */
+  const cl=rec.filter(l=>l.sub==='hon').map(l=>{const c=cliById(l.k.slice(2));const e=c?cliEm(c,de):{};const hm=(c&&ativoEm(c,de))?(+e.honorario||0):0;return{l,c,nome:l.nome,reg:e.regime||'Sem regime',hm,treze:!!e.treze,tot:l.tot}}).filter(x=>x.hm>0);
+  const hs=cl.map(x=>x.hm).sort((a,b)=>a-b),tick=hs.length?hs.reduce((a,b)=>a+b,0)/hs.length:0,med=hs.length?hs[Math.floor(hs.length/2)]:0;
+  const porReg={};for(const x of cl){(porReg[x.reg]=porReg[x.reg]||[]).push(x)}
+  const regs=Object.entries(porReg).map(([r,xs])=>({r,n:xs.length,media:xs.reduce((a,x)=>a+x.hm,0)/xs.length,soma:xs.reduce((a,x)=>a+x.hm,0)})).sort((a,b)=>b.soma-a.soma);
+  const mediaReg=Object.fromEntries(regs.map(r=>[r.r,r.media]));
+  const abaixo=cl.filter(x=>porReg[x.reg].length>=3&&x.hm<0.7*mediaReg[x.reg]).map(x=>({...x,alvo:r2(mediaReg[x.reg]*0.8),ganho:r2(mediaReg[x.reg]*0.8-x.hm)})).sort((a,b)=>b.ganho-a.ganho);
+  const sem13=cl.filter(x=>!x.treze).sort((a,b)=>b.hm-a.hm);
+  const top=[...rec].sort((a,b)=>b.tot-a.tot),top5=top.slice(0,5).reduce((s,l)=>s+l.tot,0);
+  /* despesas: ranking, categoria e Pareto */
+  const ds=[...des].sort((a,b)=>b.tot-a.tot);let ac=0;const pareto=new Set();for(const l of ds){if(ac<0.8*tD)pareto.add(l.k);ac+=l.tot}
+  const grupoDe=l=>(l.nome.split(' · ')[1]||l.nome);
+  const cats={};for(const l of des){const k=l.extra?'desp':catDe('Despesa',grupoDe(l));cats[k]=r2((cats[k]||0)+l.tot)}
+  /* meta de margem: quanto falta e como fechar */
+  const recMeta=tD/(1-meta),falta=Math.max(0,recMeta-tR),faltaMes=falta/n;
+  const honTot=cl.reduce((s,x)=>s+x.hm,0);
+  const pctReaj=honTot?faltaMes/honTot:0,novos=tick?Math.ceil(faltaMes/tick):0,corte=Math.max(0,tD-tR*(1-meta));
+  const pe=tD/n,cliPe=tick?Math.ceil((pe-(tR-cl.reduce((s,x)=>s+x.tot,0))/n)/tick):0;
+  const P_=v=>tR?(v/tR*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%':'–';
+  const per=`${mesAno(de)} a ${mesAno(ate)}`;
+  return `<details class="panel" open style="padding:16px 18px"><summary style="cursor:pointer;font-weight:700;font-size:16px">Análise da projeção: onde melhorar receitas e despesas</summary>
+  <div class="params" style="align-items:end;margin-top:12px">
+    <label>De<input type="month" data-simtxt="aDe" value="${de}"></label>
+    <label>Até<input type="month" data-simtxt="aAte" value="${ate}"></label>
+    <label>Margem desejada (%)<input type="number" step="1" data-sim="aMeta" value="${Math.round(meta*100)}"></label>
+  </div>
+  <p class="hint" style="margin:8px 0 12px">${per} (${n} meses), com o reajuste e os ajustes da simulação. Distribuição de lucros, investimentos e reservas ficam fora das despesas.</p>
+  <section class="kpis" style="margin-top:0">
+    ${stat('Receitas no período',brlK(tR),`${brlK(tR/n)} por mês`,'dollar','a')}
+    ${stat('Despesas no período',brlK(tD),`${P_(tD)} das receitas`,'wallet','w')}
+    ${stat('Resultado',brlK(res),`margem de ${(marg*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%`,'percent','p',res<0?'neg':'')}
+    ${stat('Ponto de equilíbrio',brlK(pe)+'/mês',`receita mínima para pagar as despesas`,'target','i')}
+  </section>
+  <div class="panel" style="margin:12px 0;border-left:4px solid ${falta?'var(--warning,#d97706)':'var(--success,#16a34a)'}"><h3>Meta de ${Math.round(meta*100)}% de margem</h3>
+    ${falta?`<p style="margin:0 0 8px">Faltam <b>${brl2(faltaMes)} por mês</b> (${brl2(falta)} no período) de resultado. Caminhos que fecham a conta sozinhos:</p>
+    <ul style="margin:0;padding-left:18px;line-height:1.8">
+      <li>Reajustar os honorários em mais <b>${(pctReaj*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%</b> além do reajuste simulado;</li>
+      <li>ou conquistar <b>${novos} cliente(s) novo(s)</b> com o honorário médio de ${brl2(tick)};</li>
+      <li>ou cortar <b>${brl2(corte/n)} por mês</b> nas despesas (${P_(corte)} das receitas).</li></ul>
+    <p class="hint" style="margin:8px 0 0">Na prática, a combinação costuma ser mais fácil: parte em reajuste dos que pagam abaixo da média, parte em clientes novos e parte em despesas.</p>`
+    :`<p style="margin:0">A projeção já atinge a meta: margem de ${(marg*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%, ${brl2((res-tR*meta)/n)} por mês acima dela.</p>`}
+  </div>
+  <div class="cols eq">
+    <div class="panel"><h3>Receitas</h3>
+      <ul style="margin:0 0 10px;padding-left:18px;line-height:1.7">
+        <li>${cl.length} clientes pagando; honorário médio <b>${brl2(tick)}</b>, mediana ${brl2(med)}.</li>
+        <li>Os 5 maiores somam <b>${P_(top5)}</b> das receitas${tR&&top5/tR>0.4?' — dependência alta: perder um deles pesa':''}.</li>
+        <li>${sem13.length} cliente(s) sem 13º honorário: cobrar o 13º renderia <b>${brl2(sem13.reduce((s,x)=>s+x.hm,0))}</b> por ano.</li>
+        ${abaixo.length?`<li><b>${abaixo.length}</b> cliente(s) pagam menos de 70% da média do seu regime; levar a 80% da média renderia <b>${brl2(abaixo.reduce((s,x)=>s+x.ganho,0))} por mês</b>.</li>`:''}
+      </ul>
+      <h4 style="margin:8px 0 6px">Honorário médio por regime</h4>
+      <div class="tscroll"><table><thead><tr><th class="l">Regime</th><th>Clientes</th><th>Média</th><th>Total/mês</th></tr></thead><tbody>${regs.map(r=>`<tr><td class="l">${esc(r.r)}</td><td>${r.n}</td><td>${num(r.media)}</td><td>${num(r.soma)}</td></tr>`).join('')}</tbody></table></div>
+      ${abaixo.length?`<h4 style="margin:12px 0 6px">Candidatos a revisão de honorário</h4>
+      <div class="tscroll"><table><thead><tr><th class="l">Cliente</th><th class="l">Regime</th><th>Hoje</th><th>Média do regime</th><th>Sugestão (80%)</th><th>+ por mês</th></tr></thead><tbody>${abaixo.map(x=>`<tr><td class="l">${esc(x.nome)}</td><td class="l">${esc(x.reg)}</td><td>${num(x.hm)}</td><td>${num(mediaReg[x.reg])}</td><td>${num(x.alvo)}</td><td class="pos">${num(x.ganho)}</td></tr>`).join('')}</tbody></table></div>`:''}
+    </div>
+    <div class="panel"><h3>Despesas</h3>
+      <ul style="margin:0 0 10px;padding-left:18px;line-height:1.7">
+        <li>Despesas consomem <b>${P_(tD)}</b> das receitas no período.</li>
+        <li><b>${pareto.size}</b> de ${des.length} despesas respondem por 80% do gasto: é nelas que um corte faz diferença.</li>
+        <li>Cada 10% de economia nessas ${pareto.size} vale <b>${brl2(ds.filter(l=>pareto.has(l.k)).reduce((s,l)=>s+l.tot,0)*0.1/n)} por mês</b>.</li>
+      </ul>
+      <h4 style="margin:8px 0 6px">Por categoria</h4>
+      <div class="tscroll"><table><thead><tr><th class="l">Categoria</th><th>No período</th><th>Por mês</th><th>% das receitas</th></tr></thead><tbody>${Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td class="l">${esc(DRE_CATS[k]||k)}</td><td>${num(v)}</td><td>${num(v/n)}</td><td>${P_(v)}</td></tr>`).join('')}</tbody></table></div>
+      <h4 style="margin:12px 0 6px">Maiores despesas</h4>
+      <div class="tscroll"><table><thead><tr><th class="l">Despesa</th><th>Por mês</th><th>No período</th><th>% das receitas</th><th>Corte de 10%/mês</th></tr></thead><tbody>${ds.slice(0,12).map(l=>`<tr${pareto.has(l.k)?' style="font-weight:600"':''}><td class="l">${esc(l.nome)}</td><td>${num(l.tot/n)}</td><td>${num(l.tot)}</td><td>${P_(l.tot)}</td><td>${num(l.tot*0.1/n)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="hint" style="margin:6px 0 0">Em negrito, as que formam 80% do gasto. Se alguma não for da empresa, tire-a da simulação com o × no detalhe.</p>
+    </div>
+  </div></details>`;
 }
 function vSim(){
   const modo=(cfg().sim||{}).modo||'cli';
