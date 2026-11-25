@@ -2130,7 +2130,7 @@ function simAnalise(P){
   const porReg={};for(const x of cl){(porReg[x.reg]=porReg[x.reg]||[]).push(x)}
   const regs=Object.entries(porReg).map(([r,xs])=>({r,n:xs.length,media:xs.reduce((a,x)=>a+x.hm,0)/xs.length,soma:xs.reduce((a,x)=>a+x.hm,0)})).sort((a,b)=>b.soma-a.soma);
   const mediaReg=Object.fromEntries(regs.map(r=>[r.r,r.media]));
-  const abaixo=cl.filter(x=>porReg[x.reg].length>=3&&x.hm<0.7*mediaReg[x.reg]).map(x=>({...x,alvo:r2(mediaReg[x.reg]*0.8),ganho:r2(mediaReg[x.reg]*0.8-x.hm)})).sort((a,b)=>b.ganho-a.ganho);
+  const abaixo=cl.filter(x=>porReg[x.reg].length>=2&&x.hm<mediaReg[x.reg]-0.005).map(x=>({...x,ganho:r2(mediaReg[x.reg]-x.hm),pc:x.hm/mediaReg[x.reg]})).sort((a,b)=>a.reg.localeCompare(b.reg,'pt-BR')||a.pc-b.pc);
   const sem13=cl.filter(x=>!x.treze).sort((a,b)=>b.hm-a.hm);
   const top=[...rec].sort((a,b)=>b.tot-a.tot),top5=top.slice(0,5).reduce((s,l)=>s+l.tot,0);
   /* despesas: ranking, categoria e Pareto */
@@ -2172,12 +2172,13 @@ function simAnalise(P){
         <li>${cl.length} clientes pagando; honorário médio <b>${brl2(tick)}</b>, mediana ${brl2(med)}.</li>
         <li>Os 5 maiores somam <b>${P_(top5)}</b> das receitas${tR&&top5/tR>0.4?' — dependência alta: perder um deles pesa':''}.</li>
         <li>${sem13.length} cliente(s) sem 13º honorário: cobrar o 13º renderia <b>${brl2(sem13.reduce((s,x)=>s+x.hm,0))}</b> por ano.</li>
-        ${abaixo.length?`<li><b>${abaixo.length}</b> cliente(s) pagam menos de 70% da média do seu regime; levar a 80% da média renderia <b>${brl2(abaixo.reduce((s,x)=>s+x.ganho,0))} por mês</b>.</li>`:''}
+        ${abaixo.length?`<li><b>${abaixo.length}</b> cliente(s) pagam abaixo da média do seu regime; levar todos à média renderia <b>${brl2(abaixo.reduce((s,x)=>s+x.ganho,0))} por mês</b>.</li>`:''}
       </ul>
       <h4 style="margin:8px 0 6px">Honorário médio por regime</h4>
       <div class="tscroll"><table><thead><tr><th class="l">Regime</th><th>Clientes</th><th>Média</th><th>Total/mês</th></tr></thead><tbody>${regs.map(r=>`<tr><td class="l">${esc(r.r)}</td><td>${r.n}</td><td>${num(r.media)}</td><td>${num(r.soma)}</td></tr>`).join('')}</tbody></table></div>
-      ${abaixo.length?`<h4 style="margin:12px 0 6px">Candidatos a revisão de honorário</h4>
-      <div class="tscroll"><table><thead><tr><th class="l">Cliente</th><th class="l">Regime</th><th>Hoje</th><th>Média do regime</th><th>Sugestão (80%)</th><th>+ por mês</th></tr></thead><tbody>${abaixo.map(x=>`<tr><td class="l">${esc(x.nome)}</td><td class="l">${esc(x.reg)}</td><td>${num(x.hm)}</td><td>${num(mediaReg[x.reg])}</td><td>${num(x.alvo)}</td><td class="pos">${num(x.ganho)}</td></tr>`).join('')}</tbody></table></div>`:''}
+      ${abaixo.length?`<h4 style="margin:12px 0 6px">Clientes abaixo da média do regime</h4>
+      <div class="tscroll"><table><thead><tr><th class="l">Cliente</th><th class="l">Regime</th><th>Hoje</th><th>Média</th><th>% da média</th><th>Até a média/mês</th><th>No ano</th><th>13º</th></tr></thead><tbody>${abaixo.map(x=>`<tr${x.pc<0.7?' style="font-weight:600"':''}><td class="l">${esc(x.nome)}</td><td class="l">${esc(x.reg)}</td><td>${num(x.hm)}</td><td>${num(mediaReg[x.reg])}</td><td>${Math.round(x.pc*100)}%</td><td class="pos">${num(x.ganho)}</td><td>${num(x.ganho*12)}</td><td>${x.treze?'sim':'<span class="muted">não</span>'}</td></tr>`).join('')}</tbody></table></div>
+      <p class="hint" style="margin:6px 0 0">Em negrito, quem paga menos de 70% da média. Mudanças já combinadas (ex.: novo valor a partir de fevereiro) entram aqui quando programadas na ficha do cliente.</p>`:''}
     </div>
     <div class="panel"><h3>Despesas</h3>
       <ul style="margin:0 0 10px;padding-left:18px;line-height:1.7">
