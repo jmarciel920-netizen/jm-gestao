@@ -2145,7 +2145,9 @@ function simAnalise(P){
   const honTot=cl.reduce((s,x)=>s+x.hm,0);
   const pctReaj=honTot?faltaMes/honTot:0,novos=tick?Math.ceil(faltaMes/tick):0,corte=Math.max(0,tD-tR*(1-meta));
   const pe=tD/n,cliPe=tick?Math.ceil((pe-(tR-cl.reduce((s,x)=>s+x.tot,0))/n)/tick):0;
-  const c13=cl.filter(x=>x.treze).map(x=>{const dil=x.hm*13/12,arr=Math.round(dil/10)*10;return{...x,ano:x.hm*13,dil,arr,dif:arr*12-x.hm*13}}).sort((a,b)=>b.hm-a.hm);
+  /* 13º: parte do honorário já com o reajuste projetado (no mês do reajuste dentro do período, ou no início) */
+  const rIniA=P.rIni||`${nowY+1}-02`,refYm=yms.find(ym=>ym>=rIniA)||de;
+  const c13=cl.filter(x=>x.treze).map(x=>{const b=x.l.b[refYm],a=x.l.vA[refYm],F=b?a/b:1,h=r2(x.hm*F),dil=h*13/12,arr=Math.round(dil/10)*10;return{...x,h0:x.hm,hm:h,ano:h*13,dil,arr,dif:arr*12-h*13}}).sort((a,b)=>b.hm-a.hm);
   const P_=v=>tR?(v/tR*100).toLocaleString('pt-BR',{maximumFractionDigits:1})+'%':'–';
   const per=`${mesAno(de)} a ${mesAno(ate)}`;
   return `<details class="panel" open style="padding:16px 18px"><summary style="cursor:pointer;font-weight:700;font-size:16px">Análise da projeção: onde melhorar receitas e despesas</summary>
@@ -2179,9 +2181,9 @@ function simAnalise(P){
         ${abaixo.length?`<li><b>${abaixo.length}</b> cliente(s) pagam abaixo da média do seu regime; levar todos à média renderia <b>${brl2(abaixo.reduce((s,x)=>s+x.ganho,0))} por mês</b>.</li>`:''}
       </ul>
       ${c13.length?`<h4 style="margin:8px 0 6px">13º honorário (adicional): receber em dezembro ou todo mês</h4>
-      <div class="tscroll"><table><thead><tr><th class="l">Cliente</th><th>Mensal</th><th>Ano com 13º em dez</th><th>Mensal diluído (13/12)</th><th>Arredondado</th><th>Ano arredondado</th><th>Diferença no ano</th></tr></thead><tbody>${c13.map(x=>`<tr><td class="l">${esc(x.nome)}</td><td>${num(x.hm)}</td><td>${num(x.ano)}</td><td>${num(x.dil)}</td><td>${num(x.arr)}</td><td>${num(x.arr*12)}</td><td class="${x.dif<0?'neg':x.dif>0?'pos':''}">${num(x.dif)}</td></tr>`).join('')}
-      <tr style="font-weight:600"><td class="l">Total (${c13.length})</td><td>${num(c13.reduce((s,x)=>s+x.hm,0))}</td><td>${num(c13.reduce((s,x)=>s+x.ano,0))}</td><td>${num(c13.reduce((s,x)=>s+x.dil,0))}</td><td>${num(c13.reduce((s,x)=>s+x.arr,0))}</td><td>${num(c13.reduce((s,x)=>s+x.arr*12,0))}</td><td>${num(c13.reduce((s,x)=>s+x.dif,0))}</td></tr></tbody></table></div>
-      <p class="hint" style="margin:6px 0 12px">Em dezembro, o caixa recebe ${brl2(c13.reduce((s,x)=>s+x.hm,0))} a mais de uma vez (13º). Diluído, o mesmo valor entra aos poucos, ${brl2(c13.reduce((s,x)=>s+x.hm/12,0))} a mais por mês, e o cliente não sente o pico de dezembro. Escolha a forma no campo "13º honorário" acima para ver a projeção mês a mês.</p>`:''}
+      <div class="tscroll"><table><thead><tr><th class="l">Cliente</th><th>Mensal hoje</th><th>Com reajuste (${mesAno(refYm)})</th><th>Ano com 13º em dez</th><th>Mensal diluído (13/12)</th><th>Arredondado</th><th>Ano arredondado</th><th>Diferença no ano</th></tr></thead><tbody>${c13.map(x=>`<tr><td class="l">${esc(x.nome)}</td><td>${num(x.h0)}</td><td>${num(x.hm)}</td><td>${num(x.ano)}</td><td>${num(x.dil)}</td><td>${num(x.arr)}</td><td>${num(x.arr*12)}</td><td class="${x.dif<0?'neg':x.dif>0?'pos':''}">${num(x.dif)}</td></tr>`).join('')}
+      <tr style="font-weight:600"><td class="l">Total (${c13.length})</td><td>${num(c13.reduce((s,x)=>s+x.h0,0))}</td><td>${num(c13.reduce((s,x)=>s+x.hm,0))}</td><td>${num(c13.reduce((s,x)=>s+x.ano,0))}</td><td>${num(c13.reduce((s,x)=>s+x.dil,0))}</td><td>${num(c13.reduce((s,x)=>s+x.arr,0))}</td><td>${num(c13.reduce((s,x)=>s+x.arr*12,0))}</td><td>${num(c13.reduce((s,x)=>s+x.dif,0))}</td></tr></tbody></table></div>
+      <p class="hint" style="margin:6px 0 12px">Em dezembro, o caixa recebe ${brl2(c13.reduce((s,x)=>s+x.hm,0))} a mais de uma vez (13º). Diluído, o mesmo valor entra aos poucos, ${brl2(c13.reduce((s,x)=>s+x.hm/12,0))} a mais por mês, e o cliente não sente o pico de dezembro. Valores já com o reajuste de ${String(+P.rRec||0).replace('.',',')}% a partir de ${mesAno(rIniA)}. Escolha a forma no campo "13º honorário" acima para ver a projeção mês a mês.</p>`:''}
       <h4 style="margin:8px 0 6px">Honorário médio por regime</h4>
       <div class="tscroll"><table><thead><tr><th class="l">Regime</th><th>Clientes</th><th>Média</th><th>Total/mês</th></tr></thead><tbody>${regs.map(r=>`<tr><td class="l">${esc(r.r)}</td><td>${r.n}</td><td>${num(r.media)}</td><td>${num(r.soma)}</td></tr>`).join('')}</tbody></table></div>
       ${abaixo.length?`<h4 style="margin:12px 0 6px">Clientes abaixo da média do regime</h4>
