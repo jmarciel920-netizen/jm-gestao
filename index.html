@@ -1987,9 +1987,8 @@ function valorRecMes(g,ym){if(g.porMes[ym]!=null)return g.porMes[ym];return g.fi
 function projMesAno(P,ano){
   const yms=Array.from({length:12},(_,i)=>`${ano}-${pad(i+1)}`);
   /* reajuste: aplica a partir do mês escolhido do primeiro ano; acumula a cada ano se marcado */
-  const a0=Math.min(...P.anosSel),mesR=+P.rMes||0;
-  const fator=(pct,i)=>{if(!pct)return 1;let n=0;
-    if(P.acum){n=ano-a0+(i>=mesR?1:0)}else n=(ano>a0||i>=mesR)?1:0;return Math.pow(1+pct/100,n)};
+  const ini=P.rIni||`${nowY+1}-02`,[iy,im]=ini.split('-').map(Number);
+  const fator=(pct,i)=>{if(!pct)return 1;const d=(ano-iy)*12+(i+1-im);if(d<0)return 1;const n=P.acum?Math.floor(d/12)+1:1;return Math.pow(1+pct/100,n)};
   const cli=[];
   for(const c of cliComHist()){if(ehPropria(c))continue;
     const v=yms.map((ym,i)=>{if(!ativoEm(c,ym))return 0;const e=cliEm(c,ym);return r2((e.honorario||0)*(i===11&&e.treze?2:1))});
@@ -2014,7 +2013,7 @@ function vSimMes(P){
   const R=P.anosSel.slice().sort().map(a=>projMesAno(P,a));
   const S_=v=>v.reduce((a,b)=>a+b,0);
   const linha=(nome,v,cls='',st='')=>`<tr${st?` style="${st}"`:''}><td class="l${cls?' '+cls:''}">${nome}</td>${v.map(x=>`<td class="${x<0?'neg':''}">${x?num(x):'<span class="muted">–</span>'}</td>`).join('')}<td style="font-weight:600" class="${S_(v)<0?'neg':''}">${num(S_(v))}</td></tr>`;
-  const linhaEd=(l,ano)=>`<tr style="font-size:12px${l.fora?';opacity:.55':''}"><td class="l"><span style="display:flex;gap:6px;align-items:center"><button class="icon" data-act="simExcl" data-k="${esc(l.k)}" title="${l.fora?'Voltar com esta linha':'Tirar esta linha da simulação'}" aria-label="${l.fora?'Voltar com a linha':'Tirar a linha'}">${l.fora?'↺':'×'}</button>${l.extra?`<button class="icon" data-act="simExtraDel" data-id="${esc(l.extra)}" title="Apagar esta linha simulada" aria-label="Apagar linha simulada">🗑</button>`:''}<span class="muted" style="${l.fora?'text-decoration:line-through':''}">${esc(l.nome)}</span></span></td>${l.v.map((x,i)=>`<td style="padding:2px"><input class="simcel" inputmode="decimal" data-smc="${esc(l.k)}|${ano}|${i}" value="${x?numIn(x):''}" ${l.fora?'disabled':''} title="${l.ed[i]?'Alterado por você (original: '+num(l.orig[i])+'). Apague para voltar ao original.':'Digite para mudar o valor deste mês'}" style="width:76px;text-align:right;padding:3px 4px;border:1px solid ${l.ed[i]?'var(--warning,#d97706)':'var(--border,#e5e7eb)'};border-radius:6px;background:transparent;color:inherit;font:inherit"></td>`).join('')}<td style="font-weight:600">${num(S_(l.v))}</td></tr>`;
+  const linhaEd=(l,ano)=>`<tr style="font-size:12px${l.fora?';opacity:.55':''}"><td class="l"><span style="display:flex;gap:6px;align-items:center"><button class="icon" data-act="simExcl" data-k="${esc(l.k)}" title="${l.fora?'Voltar com esta linha':'Tirar esta linha da simulação'}" aria-label="${l.fora?'Voltar com a linha':'Tirar a linha'}">${l.fora?'↺':'×'}</button>${l.extra?`<button class="icon" data-act="simExtraDel" data-id="${esc(l.extra)}" title="Apagar esta linha simulada" aria-label="Apagar linha simulada">🗑</button>`:''}<span class="muted" style="${l.fora?'text-decoration:line-through':''}">${esc(l.nome)}</span></span></td>${l.v.map((x,i)=>`<td style="padding:2px"><input class="simcel" inputmode="decimal" data-smc="1" data-smk="${esc(l.k)}" data-sma="${ano}" data-smi="${i}" value="${x?numIn(x):''}" ${l.fora?'disabled':''} title="${l.ed[i]?'Alterado por você (original: '+num(l.orig[i])+'). Apague para voltar ao original.':'Digite para mudar o valor deste mês'}" style="width:76px;text-align:right;padding:3px 4px;border:1px solid ${l.ed[i]?'var(--warning,#d97706)':'var(--border,#e5e7eb)'};border-radius:6px;background:transparent;color:inherit;font:inherit"></td>`).join('')}<td style="font-weight:600">${num(S_(l.v))}</td></tr>`;
   const dif=(a,b)=>a.map((x,i)=>r2(x-b[i]));
   const tab=r=>{const rr=+P.rRec||0,rd=+P.rDesp||0;
     return `<h2 class="sec">${r.ano}</h2><div class="tscroll"><table class="simmes"><thead><tr><th class="l">Linha</th>${MESES.map(m=>`<th>${m}</th>`).join('')}<th>Total</th></tr></thead><tbody>
@@ -2041,11 +2040,11 @@ function vSimMes(P){
     <div class="fl" style="grid-column:1/-1">Anos<div class="seg" role="group" aria-label="Anos" style="flex-wrap:wrap;margin-top:6px">${anosOp.map(a=>`<button data-act="simAno" data-v="${a}" aria-pressed="${P.anosSel.includes(a)}">${a}</button>`).join('')}</div></div>
     <label>Aumento nas receitas (%)<input type="number" step="0.1" data-sim="rRec" value="${P.rRec}"></label>
     <label>Aumento nas despesas (%)<input type="number" step="0.1" data-sim="rDesp" value="${P.rDesp}"></label>
-    <label>A partir de<select data-sim="rMes">${MESES_L.map((m,i)=>`<option value="${i}"${i===+P.rMes?' selected':''}>${m} de ${Math.min(...P.anosSel)}</option>`).join('')}</select></label>
-    <label style="flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" data-sim="acum"${P.acum?' checked':''}> Repetir o aumento a cada ano</label>
+    <label>Primeiro reajuste em<input type="month" data-simtxt="rIni" value="${esc(P.rIni||`${nowY+1}-02`)}"></label>
+    <label style="flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" data-sim="acum"${P.acum?' checked':''}> Reajuste anual (repete todo ano no mesmo mês)</label>
     <label style="flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" data-sim="det"${P.det?' checked':''}> Detalhar por cliente e por lançamento</label>
   </div>
-  <p class="hint" style="margin:10px 0 0">Honorários: o valor de cada cliente ativo no mês, pelo cadastro e pelas mudanças já programadas (13º honorário em dezembro). Recorrentes: lançamentos fixos ou que se repetem todo mês; usam o valor lançado no mês e, depois do último lançamento, repetem o último valor (os que já têm data para acabar, como parcelas, param no fim). ${P.acum?'O aumento é repetido a cada ano, sobre o ano anterior.':'O aumento é aplicado uma vez.'}</p></div>
+  <p class="hint" style="margin:10px 0 0">Honorários: o valor de cada cliente ativo no mês, pelo cadastro e pelas mudanças já programadas (13º honorário em dezembro). Recorrentes: lançamentos fixos ou que se repetem todo mês; usam o valor lançado no mês e, depois do último lançamento, repetem o último valor (os que já têm data para acabar, como parcelas, param no fim). ${P.acum?'O reajuste entra em '+mesAno(P.rIni||`${nowY+1}-02`)+' e se repete a cada 12 meses, sobre o valor já reajustado.':'O reajuste entra uma vez, em '+mesAno(P.rIni||`${nowY+1}-02`)+'.'}</p></div>
   <section class="kpis">
     ${stat('O aumento nas receitas representa',brlK(ganhoR),`a mais em ${rotAnos}`,'dollar','a')}
     ${stat('O aumento nas despesas representa',brlK(ganhoD),`a mais em ${rotAnos}`,'wallet','w',ganhoD>0?'neg':'')}
@@ -2163,9 +2162,10 @@ main.addEventListener('change',e=>{
   if(a==='dreM'){S.dreM=+t.value;render();return}
   if(a==='dreReg'){setCfg({dreRegime:t.value});render();return}
   if(a==='dreCat'){const dre={...(cfg().dre||{})};const k=t.dataset.t+'|'+t.dataset.g;if(t.value===defCat(t.dataset.t,t.dataset.g))delete dre[k];else dre[k]=t.value;setCfg({dre});render();return}
-  if(t.dataset.smc){const [k,ano,i]=t.dataset.smc.split('|');const sim={...(cfg().sim||{})};const ov=JSON.parse(JSON.stringify(sim.ov||{}));ov[ano]=ov[ano]||{};ov[ano][k]=ov[ano][k]||{};
+  if(t.dataset.simtxt){const sim={...(cfg().sim||{})};if(!/^\d{4}-\d{2}$/.test(t.value)){toast('Escolha mês e ano');return}sim[t.dataset.simtxt]=t.value;setCfg({sim});render();return}
+  if(t.dataset.smc){const k=t.dataset.smk,ano=t.dataset.sma,i=t.dataset.smi;const sim={...(cfg().sim||{})};const ov=JSON.parse(JSON.stringify(sim.ov||{}));ov[ano]=ov[ano]||{};ov[ano][k]=ov[ano][k]||{};
     const v=t.value.trim();if(v==='')delete ov[ano][k][i];else ov[ano][k][i]=r2(parseBR(v));if(!Object.keys(ov[ano][k]).length)delete ov[ano][k];if(!Object.keys(ov[ano]).length)delete ov[ano];
-    sim.ov=ov;setCfg({sim});render();const n=main.querySelector(`[data-smc="${t.dataset.smc}"]`);if(n){const td=n.closest('td');const prox=td&&td.nextElementSibling&&td.nextElementSibling.querySelector('input');(prox||n).focus()}return}
+    sim.ov=ov;setCfg({sim});render();const n=[...main.querySelectorAll('input.simcel')].find(x=>x.dataset.smk===k&&x.dataset.sma===ano&&x.dataset.smi===i);if(n){const td=n.closest('td');const prox=td&&td.nextElementSibling&&td.nextElementSibling.querySelector('input');(prox||n).focus()}return}
   if(t.dataset.sim){const sim={...(cfg().sim||{})};sim[t.dataset.sim]=t.type==='checkbox'?t.checked:(+t.value||0);setCfg({sim});render();const n=main.querySelector(`[data-sim="${t.dataset.sim}"]`);n&&n.focus();return}
 });
 
